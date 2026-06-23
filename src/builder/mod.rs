@@ -100,6 +100,10 @@ pub async fn run_build_worker(
                     }
 
                     let _ = queue.publish_status(&job.deployment_id, "ready", "Build completed").await;
+
+                    // Update PR comment if this was a PR deployment
+                    update_pr_comment_if_exists(&db, &config, &job.deployment_id, "ready", Some(&framework), None).await;
+
                     let _ = msg.ack().await;
                 }
                 Err(e) => {
@@ -113,6 +117,9 @@ pub async fn run_build_worker(
                     }
 
                     let _ = queue.publish_status(&job.deployment_id, "error", &error_msg).await;
+
+                    // Update PR comment with error
+                    update_pr_comment_if_exists(&db, &config, &job.deployment_id, "error", None, Some(&error_msg)).await;
 
                     // Retry or dead-letter if attempts exhausted
                     if job.attempt < 3 {
@@ -598,6 +605,49 @@ async fn sha256_any_lockfile(project_dir: &std::path::Path) -> String {
         }
     }
     String::new()
+}
+
+/// Update the PR comment for a deployment if one exists.
+/// Called by the build worker when a build completes (success or failure).
+async fn update_pr_comment_if_exists(
+    db: &Database,
+    config: &AppConfig,
+    deployment_id: &str,
+    status: &str,
+    framework: Option<&str>,
+    error: Option<&str>,
+) {
+    let dep_uuid = match uuid::Uuid::parse_str(deployment_id) {
+        Ok(id) => id,
+        Err(_) => return,
+    };
+
+    let row = match db.get_deployment_github_comment(dep_uuid).await {
+        Ok(Some(r)) => r,
+        _ => return,
+    };
+
+    let (comment_id, _pr_number, _project_id, repo_full_name, url) = row;
+
+    let bot = match crate::github::PrBot::new(&config.github_token) {
+        Some(b) => b,
+        None => return,
+    };
+
+    if let Err(e) = bot
+        .update_deployment_comment(
+            &repo_full_name,
+            comment_id as u64,
+            status,
+            &url,
+            deployment_id,
+            framework,
+            error,
+        )
+        .await
+    {
+        tracing::warn!("Failed to update PR comment: {}", e);
+    }
 }
 
 /// Compute SHA256 of a file (for cache key)

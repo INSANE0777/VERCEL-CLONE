@@ -43,6 +43,8 @@ impl Database {
                 framework TEXT,
                 url TEXT,
                 is_production BOOLEAN NOT NULL DEFAULT false,
+                github_comment_id BIGINT,
+                github_pr_number INTEGER,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
@@ -183,6 +185,39 @@ impl Database {
         .fetch_one(&self.pool)
         .await?;
         Ok(deployment)
+    }
+
+    pub async fn set_deployment_github_comment(
+        &self,
+        deployment_id: uuid::Uuid,
+        comment_id: i64,
+        pr_number: i32,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE deployments SET github_comment_id = $1, github_pr_number = $2 WHERE id = $3",
+        )
+        .bind(comment_id)
+        .bind(pr_number)
+        .bind(deployment_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_deployment_github_comment(
+        &self,
+        deployment_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<(i64, i32, uuid::Uuid, String, String)>> {
+        let row: Option<(i64, i32, uuid::Uuid, String, String)> = sqlx::query_as(
+            r#"SELECT d.github_comment_id, d.github_pr_number, d.project_id, p.github_repo_full_name, d.url
+               FROM deployments d
+               JOIN projects p ON d.project_id = p.id
+               WHERE d.id = $1 AND d.github_comment_id IS NOT NULL"#
+        )
+        .bind(deployment_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
     }
 
     pub async fn get_deployment(&self, id: uuid::Uuid) -> anyhow::Result<Deployment> {

@@ -28,6 +28,8 @@ pub struct Deployment {
     pub framework: Option<String>,
     pub url: Option<String>,
     pub is_production: bool,
+    pub github_comment_id: Option<i64>,
+    pub github_pr_number: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

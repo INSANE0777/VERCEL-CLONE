@@ -3,6 +3,7 @@ mod builder;
 mod config;
 mod db;
 mod edge;
+mod github;
 mod models;
 mod queue;
 mod storage;
@@ -12,6 +13,7 @@ use builder::warm_pool::WarmPool;
 use config::AppConfig;
 use db::Database;
 use edge::EdgeRouter;
+use github::PrBot;
 use queue::BuildQueue;
 use storage::ArtifactStore;
 use std::path::PathBuf;
@@ -28,6 +30,7 @@ pub struct AppState {
     pub artifacts: ArtifactStore,
     pub router: EdgeRouter,
     pub warm_pool: Option<Arc<WarmPool>>,
+    pub pr_bot: Option<Arc<PrBot>>,
     pub active_builds: Arc<AtomicUsize>,
     pub start_time: SystemTime,
 }
@@ -86,6 +89,14 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    // GitHub PR bot (optional — requires GITHUB_TOKEN)
+    let pr_bot = PrBot::new(&config.github_token).map(Arc::new);
+    if pr_bot.is_some() {
+        tracing::info!("GitHub PR bot enabled");
+    } else {
+        tracing::info!("GitHub PR bot disabled (no GITHUB_TOKEN)");
+    }
+
     let state = Arc::new(AppState {
         db: db.clone(),
         config: config.clone(),
@@ -93,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
         artifacts: artifacts.clone(),
         router: router.clone(),
         warm_pool: warm_pool.clone(),
+        pr_bot: pr_bot.clone(),
         active_builds: Arc::new(AtomicUsize::new(0)),
         start_time: SystemTime::now(),
     });

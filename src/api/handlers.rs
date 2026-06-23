@@ -304,6 +304,7 @@ pub async fn github_webhook(State(state): State<Arc<AppState>>, headers: HeaderM
 
     match event {
         "push" => handle_push(&state, &payload).await,
+        "pull_request" => handle_pull_request(&state, &payload).await,
         "ping" => Ok(Json(serde_json::json!({ "message": "pong" }))),
         _ => Ok(Json(serde_json::json!({ "message": "ignored" }))),
     }
@@ -355,6 +356,79 @@ async fn handle_push(state: &AppState, payload: &serde_json::Value) -> Result<Js
         "message": "deployment created",
         "deployment_id": d.id.to_string(),
         "url": d.url,
+    })))
+}
+
+async fn handle_pull_request(state: &AppState, payload: &serde_json::Value) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Only handle opened, reopened, and synchronize (push to PR branch)
+    let action = payload.get("action").and_then(|a| a.as_str()).unwrap_or("");
+    if !matches!(action, "opened" | "reopened" | "synchronize") {
+        return Ok(Json(serde_json::json!({ "message": format!("action '{}' ignored", action) })));
+    }
+
+    let repo_full_name = payload.get("repository")
+        .and_then(|r| r.get("full_name")).and_then(|n| n.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "Missing repository.full_name".into()))?;
+
+    let pr_number = payload.get("number").and_then(|n| n.as_u64())
+        .ok_or((StatusCode::BAD_REQUEST, "Missing PR number".into()))?;
+
+    let pr_data = payload.get("pull_request")
+        .ok_or((StatusCode::BAD_REQUEST, "Missing pull_request object".into()))?;
+
+    let sha = pr_data.get("head").and_then(|h| h.get("sha")).and_then(|s| s.as_str())
+        .unwrap_or("HEAD");
+    let branch = pr_data.get("head").and_then(|h| h.get("ref")).and_then(|r| r.as_str())
+        .unwrap_or("");
+
+    let project = match state.db.get_project_by_repo(repo_full_name).await {
+        Ok(p) => p,
+        Err(_) => return Ok(Json(serde_json::json!({ "message": "no project configured" }))),
+    };
+
+    // PR deployments are always preview (not production)
+    let url = format!("{}-{:.8}.localhost", project.name, uuid::Uuid::new_v4());
+
+    let d = state.db.create_deployment(project.id, sha, &branch, false, &url)
+        .await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Post PR comment if bot is enabled
+    if let Some(bot) = &state.pr_bot {
+        match bot.post_deployment_comment(repo_full_name, pr_number, &url, &d.id.to_string()).await {
+ Ok(comment_id) => {
+                if let Err(e) = state.db
+                    .set_deployment_github_comment(d.id, comment_id as i64, pr_number as i32)
+                    .await
+                {
+                    tracing::warn!("Failed to store PR comment ID: {}", e);
+                }
+            }
+            Err(e) => tracing::warn!("Failed to post PR comment: {}", e),
+        }
+    }
+
+    // Get env vars for preview environment
+    let env_vars = state.db.get_env_vars(project.id, "preview").await.unwrap_or_default();
+
+    let job = BuildJob {
+        deployment_id: d.id.to_string(),
+        project_id: project.id.to_string(),
+        sha: sha.into(), branch: branch.to_string(),
+        repo_full_name: project.github_repo_full_name.clone(),
+        repo_url: project.github_repo_url.clone(),
+        is_production: false,
+        env_vars: env_vars.into_iter().map(|e| (e.key, e.value)).collect(),
+        attempt: 1,
+    };
+
+    state.queue.enqueue(&job).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "message": "preview deployment created for PR",
+        "deployment_id": d.id.to_string(),
+        "url": d.url,
+        "pr_number": pr_number,
     })))
 }
 

@@ -345,7 +345,7 @@ Each replica runs both the REST API and build workers. The NATS consumer group e
 - [x] Edge middleware (redirects, rewrites, custom headers → Caddy directives)
 
 ### 🔜 v0.3.1
-- [ ] GitHub PR comment bot (posts deployment URL on each PR)
+- [x] GitHub PR comment bot (posts deployment URL on each PR)
 - [ ] Analytics + usage metering
 - [ ] React dashboard UI
 
