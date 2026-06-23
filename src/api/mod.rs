@@ -20,6 +20,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/projects/:id/env/:key", delete(handlers::delete_env_var))
         .route("/api/projects/:id/domains", get(handlers::list_domains).post(handlers::add_domain))
         .route("/api/projects/:id/domains/:domain", delete(handlers::delete_domain))
+        .route("/api/projects/:id/middleware", get(handlers::list_middleware_rules).post(handlers::create_middleware_rule))
+        .route("/api/projects/:id/middleware/:rule_id", delete(handlers::delete_middleware_rule))
         .route("/api/deployments/:id", get(handlers::get_deployment))
         .route("/api/deployments/:id/logs", get(handlers::get_deployment_logs))
         .route("/api/deployments/:id/status/stream", get(handlers::stream_deployment_status))

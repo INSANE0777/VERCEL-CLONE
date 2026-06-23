@@ -1,5 +1,5 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
-use crate::models::{Project, Deployment, EnvVar, BuildCache, Domain};
+use crate::models::{Project, Deployment, EnvVar, BuildCache, Domain, MiddlewareRuleDb};
 
 #[derive(Clone)]
 pub struct Database {
@@ -81,6 +81,18 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_env_vars_project ON env_vars(project_id);
             CREATE INDEX IF NOT EXISTS idx_build_caches_project ON build_caches(project_id);
             CREATE INDEX IF NOT EXISTS idx_domains_project ON domains(project_id);
+
+            CREATE TABLE IF NOT EXISTS middleware_rules (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                rule_type TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                target TEXT NOT NULL,
+                status_code INTEGER,
+                header_name TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS idx_middleware_project ON middleware_rules(project_id);
             "#,
         )
         .execute(&self.pool)
@@ -384,6 +396,52 @@ impl Database {
         sqlx::query("DELETE FROM domains WHERE project_id = $1 AND domain = $2")
             .bind(project_id)
             .bind(domain)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // ── Middleware Rules ────────────────────────────────────
+
+    pub async fn create_middleware_rule(
+        &self,
+        project_id: uuid::Uuid,
+        rule_type: &str,
+        pattern: &str,
+        target: &str,
+        status_code: Option<i32>,
+        header_name: Option<&str>,
+    ) -> anyhow::Result<MiddlewareRuleDb> {
+        let rule = sqlx::query_as::<_, MiddlewareRuleDb>(
+            r#"INSERT INTO middleware_rules (project_id, rule_type, pattern, target, status_code, header_name)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               RETURNING *"#
+        )
+        .bind(project_id)
+        .bind(rule_type)
+        .bind(pattern)
+        .bind(target)
+        .bind(status_code)
+        .bind(header_name)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(rule)
+    }
+
+    pub async fn list_middleware_rules(&self, project_id: uuid::Uuid) -> anyhow::Result<Vec<MiddlewareRuleDb>> {
+        let rules = sqlx::query_as::<_, MiddlewareRuleDb>(
+            "SELECT * FROM middleware_rules WHERE project_id = $1 ORDER BY created_at ASC"
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rules)
+    }
+
+    pub async fn delete_middleware_rule(&self, project_id: uuid::Uuid, rule_id: uuid::Uuid) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM middleware_rules WHERE project_id = $1 AND id = $2")
+            .bind(project_id)
+            .bind(rule_id)
             .execute(&self.pool)
             .await?;
         Ok(())

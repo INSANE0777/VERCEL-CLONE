@@ -1,5 +1,7 @@
 pub mod firecracker;
 pub mod framework;
+pub mod functions;
+pub mod image_opt;
 pub mod warm_pool;
 
 use crate::config::AppConfig;
@@ -130,7 +132,7 @@ pub async fn run_build_worker(
 
 /// Execute a build: clone, detect framework, restore cache, build, store artifacts
 async fn execute_build(
-    _db: &Database,
+    db: &Database,
     artifacts: &ArtifactStore,
     router: &EdgeRouter,
     config: &AppConfig,
@@ -258,6 +260,15 @@ async fn execute_build(
         }
     };
 
+    // ── Step 6.5: Optimize images in build output ──
+    match image_opt::optimize_images(&artifact_path).await {
+        Ok((count, saved)) if count > 0 => {
+            tracing::info!("Optimized {} images, ~{} bytes saved", count, saved);
+        }
+        Ok(_) => tracing::debug!("No images to optimize"),
+        Err(e) => tracing::warn!("Image optimization failed (non-fatal): {}", e),
+    }
+
     let total_bytes = artifacts.store_build_output(&job.deployment_id, &artifact_path).await?;
     tracing::info!("Stored {} bytes of build artifacts", total_bytes);
 
@@ -270,11 +281,32 @@ async fn execute_build(
             job.deployment_id)
     };
 
+    // Fetch middleware rules for this project
+    let mw_rules: Vec<crate::edge::middleware::MiddlewareRule> = match uuid::Uuid::parse_str(&job.project_id) {
+        Ok(pid) => match db.list_middleware_rules(pid).await {
+            Ok(rules) => rules.into_iter().map(|r| r.to_rule()).collect(),
+            Err(e) => {
+                tracing::warn!("Failed to fetch middleware rules: {}", e);
+                Vec::new()
+            }
+        },
+        Err(_) => Vec::new(),
+    };
+
+    // Detect and start serverless function runtime if API routes exist
+    let has_functions = !functions::FunctionRuntime::detect_api_routes(&artifact_path, &fw.name).is_empty();
+    if has_functions {
+        tracing::info!("Detected API routes for {} — function runtime will be available", job.deployment_id);
+        // Function runtime is started on-demand by the API when the deployment is first accessed
+        // The Caddy config includes a proxy for /api/* that points to the function runtime
+    }
+
     router.add_deployment(
         &job.deployment_id,
         &deployment_url,
         &artifacts.local_artifacts_dir(&job.deployment_id),
         &fw.name,
+        &mw_rules,
     ).await?;
 
     // Cleanup

@@ -187,6 +187,55 @@ pub async fn delete_domain(State(state): State<Arc<AppState>>, Path((id, domain)
     Ok(StatusCode::NO_CONTENT)
 }
 
+// ── Middleware Rules ──────────────────────────────────────────
+
+pub async fn list_middleware_rules(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
+    let project_id = uuid::Uuid::parse_str(&id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid UUID".into()))?;
+    let rules = state.db.list_middleware_rules(project_id).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let result: Vec<serde_json::Value> = rules.into_iter().map(|r| serde_json::json!({
+        "id": r.id.to_string(),
+        "project_id": r.project_id.to_string(),
+        "rule_type": r.rule_type,
+        "pattern": r.pattern,
+        "target": r.target,
+        "status_code": r.status_code,
+        "header_name": r.header_name,
+        "created_at": r.created_at.to_rfc3339(),
+    })).collect();
+    Ok(Json(result))
+}
+
+pub async fn create_middleware_rule(State(state): State<Arc<AppState>>, Path(id): Path<String>, Json(req): Json<crate::edge::middleware::CreateMiddlewareRuleRequest>) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    let project_id = uuid::Uuid::parse_str(&id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid UUID".into()))?;
+    let rule = state.db.create_middleware_rule(
+        project_id,
+        req.rule_type.as_str(),
+        &req.pattern,
+        &req.target,
+        req.status_code,
+        req.header_name.as_deref(),
+    ).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok((StatusCode::CREATED, Json(serde_json::json!({
+        "id": rule.id.to_string(),
+        "project_id": rule.project_id.to_string(),
+        "rule_type": rule.rule_type,
+        "pattern": rule.pattern,
+        "target": rule.target,
+        "status_code": rule.status_code,
+        "header_name": rule.header_name,
+        "created_at": rule.created_at.to_rfc3339(),
+    }))))
+}
+
+pub async fn delete_middleware_rule(State(state): State<Arc<AppState>>, Path((id, rule_id)): Path<(String, String)>) -> Result<StatusCode, (StatusCode, String)> {
+    let project_id = uuid::Uuid::parse_str(&id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid UUID".into()))?;
+    let rule_uuid = uuid::Uuid::parse_str(&rule_id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid rule UUID".into()))?;
+    state.db.delete_middleware_rule(project_id, rule_uuid).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn delete_project(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Result<StatusCode, (StatusCode, String)> {
     let uuid = uuid::Uuid::parse_str(&id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid UUID".into()))?;
     state.db.delete_project(uuid).await

@@ -1,6 +1,6 @@
 [package]
 name = "vercel-clone"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "A production-grade Vercel-like deployment platform in Rust"
 
@@ -69,3 +69,6 @@ dashmap = "6"
 # Metrics
 metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
+
+# Image optimization
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }

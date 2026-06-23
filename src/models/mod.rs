@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::edge::middleware::MiddlewareType;
+
 // ── Database Models ───────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -57,6 +59,32 @@ pub struct Domain {
     pub domain: String,
     pub verified: bool,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct MiddlewareRuleDb {
+    pub id: uuid::Uuid,
+    pub project_id: uuid::Uuid,
+    pub rule_type: String,
+    pub pattern: String,
+    pub target: String,
+    pub status_code: Option<i32>,
+    pub header_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl MiddlewareRuleDb {
+    pub fn to_rule(&self) -> crate::edge::middleware::MiddlewareRule {
+        crate::edge::middleware::MiddlewareRule {
+            id: self.id,
+            project_id: self.project_id,
+            rule_type: MiddlewareType::from_db(&self.rule_type),
+            pattern: self.pattern.clone(),
+            target: self.target.clone(),
+            status_code: self.status_code,
+            header_name: self.header_name.clone(),
+        }
+    }
 }
 
 // ── API Request/Response Types ────────────────────────────────

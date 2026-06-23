@@ -319,7 +319,7 @@ Each replica runs both the REST API and build workers. The NATS consumer group e
 
 ## Roadmap
 
-### ✅ v0.2.0 (Current)
+### ✅ v0.2.0
 - [x] PostgreSQL database with connection pooling
 - [x] NATS JetStream distributed job queue
 - [x] S3/MinIO artifact and cache storage
@@ -331,14 +331,21 @@ Each replica runs both the REST API and build workers. The NATS consumer group e
 - [x] Caddy auto-HTTPS edge router
 - [x] 3-attempt retry with dead-letter queue
 - [x] 10 framework auto-detection
+- [x] Mandatory HMAC webhook verification
+- [x] Build timeout enforcement
+- [x] GitHub token support for private repos
+- [x] DELETE routes (projects, env vars, domains)
+- [x] Multi-lockfile cache key detection
 
-### 🔜 v0.3.0
-- [ ] Firecracker microVM build isolation (hardware-enforced, like Vercel/Fly.io)
-- [ ] Warm pool of pre-booted build environments (<1s cold start)
+### ✅ v0.3.0 (Current)
+- [x] Firecracker microVM build isolation (hardware-enforced, like Vercel/Fly.io)
+- [x] Warm pool of pre-booted build environments (<1s cold start)
+- [x] Image optimization pipeline (PNG/JPEG/GIF → WebP + re-compress)
+- [x] Serverless function execution (API route detection + Docker runtime)
+- [x] Edge middleware (redirects, rewrites, custom headers → Caddy directives)
+
+### 🔜 v0.3.1
 - [ ] GitHub PR comment bot (posts deployment URL on each PR)
-- [ ] Image optimization pipeline
-- [ ] Serverless function execution (Lambda-style API routes)
-- [ ] Edge middleware (request interception at Caddy layer)
 - [ ] Analytics + usage metering
 - [ ] React dashboard UI
 

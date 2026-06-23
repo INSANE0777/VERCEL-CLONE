@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+pub mod middleware;
+
+use middleware::MiddlewareRule;
+
 /// Manages Caddy configuration for serving deployed sites.
 /// Caddy provides automatic HTTPS via Let's Encrypt.
 #[derive(Clone)]
@@ -25,6 +29,7 @@ impl EdgeRouter {
         deployment_url: &str,
         artifacts_dir: &str,
         framework: &str,
+        middleware_rules: &[MiddlewareRule],
     ) -> anyhow::Result<()> {
         let config = if self.base_domain == "localhost" {
             // Local development — no TLS
@@ -34,6 +39,7 @@ impl EdgeRouter {
 {deployment_url} {{
     root * {artifacts_dir}/{deployment_id}
     
+{middleware}
     # SPA fallback
     try_files {{path}} /index.html
     
@@ -59,6 +65,7 @@ impl EdgeRouter {
                 deployment_url = deployment_url,
                 artifacts_dir = artifacts_dir,
                 framework = framework,
+                middleware = middleware::compile_middleware(middleware_rules),
             )
         } else {
             // Production — automatic HTTPS
@@ -68,6 +75,7 @@ impl EdgeRouter {
 {deployment_url} {{
     root * {artifacts_dir}/{deployment_id}
     
+{middleware}
     # SPA fallback
     try_files {{path}} /index.html
     
@@ -100,6 +108,7 @@ impl EdgeRouter {
                 deployment_url = deployment_url,
                 artifacts_dir = artifacts_dir,
                 framework = framework,
+                middleware = middleware::compile_middleware(middleware_rules),
             )
         };
 
