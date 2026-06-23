@@ -1,0 +1,131 @@
+version: "3.8"
+
+services:
+  # ── PostgreSQL ───────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vercel_clone
+      POSTGRES_PASSWORD: vercel_clone
+      POSTGRES_DB: vercel_clone
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vercel_clone -d vercel_clone"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── NATS JetStream ───────────────────────────────────────
+  nats:
+    image: nats:2-alpine
+    command: >
+      --js
+      --store_dir /data/jetstream
+      --http_port 8222
+    volumes:
+      - nats_data:/data/jetstream
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (S3-compatible) ────────────────────────────────
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Create MinIO bucket on startup
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin &&
+      /usr/bin/mc mb local/vercel-artifacts --ignore-existing || true
+      "
+
+  # ── Caddy (auto-HTTPS reverse proxy) ───────────────────
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./artifacts:/artifacts:ro
+    depends_on:
+      - api
+
+  # ── The Rust API + Build Workers ──────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - PORT=3000
+      - DATABASE_URL=postgres://vercel_clone:vercel_clone@postgres:5432/vercel_clone
+      - NATS_URL=nats://nats:4222
+      - NATS_STREAM_NAME=BUILDS
+      - NATS_CONSUMER_NAME=build-workers
+      - S3_ENDPOINT=http://minio:9000
+      - S3_BUCKET=vercel-artifacts
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_REGION=us-east-1
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-dev-secret}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - BASE_DOMAIN=localhost
+      - DOCKER_BUILD_IMAGE=node:20-slim
+      - BUILD_MEMORY_LIMIT=2147483648
+      - BUILD_TIMEOUT_SECS=600
+      - CADDY_CONFIG_DIR=/app/caddy/configs
+      - ARTIFACTS_DIR=/artifacts
+      - MAX_CONCURRENT_BUILDS=4
+      - WARM_POOL_SIZE=2
+      - RUST_LOG=vercel_clone=debug,tower_http=debug
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./artifacts:/artifacts
+      - ./caddy/configs:/app/caddy/configs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  nats_data:
+  minio_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,25 @@
+# Build runner image — what builds happen inside
+# This is the Docker image used to run customer builds
+FROM node:20-slim
+
+# Install common build tools needed by native Node modules
+RUN apt-get update && apt-get install -y \
+    git \
+    python3 \
+    make \
+    g++ \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install common package managers globally
+RUN npm install -g pnpm yarn
+
+# Install bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
+WORKDIR /app
+
+# The /app directory will be mounted from the host
+# during build time (handled by the build worker)

@@ -1,0 +1,36 @@
+{
+    auto_https off
+    admin localhost:2019
+}
+
+:80 {
+    # Health check
+    respond /health 200 {
+        body '{"status":"ok","service":"caddy"}'
+        content_type "application/json"
+    }
+
+    # Proxy API requests
+    handle /api/* {
+        reverse_proxy api:3000
+    }
+
+    # Proxy webhooks
+    handle /webhooks/* {
+        reverse_proxy api:3000
+    }
+
+    # Proxy WebSocket status streams
+    handle /api/deployments/*/status/stream {
+        reverse_proxy api:3000
+    }
+
+    # Include generated deployment configs
+    import /app/caddy/configs/*.caddy
+
+    # Default fallback
+    handle {
+        respond '{"platform":"vercel-clone","status":"running"}' 200
+        content_type "application/json"
+    }
+}

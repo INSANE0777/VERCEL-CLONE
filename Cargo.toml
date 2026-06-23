@@ -1,0 +1,71 @@
+[package]
+name = "vercel-clone"
+version = "0.2.0"
+edition = "2021"
+description = "A production-grade Vercel-like deployment platform in Rust"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros", "ws"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# Database - PostgreSQL (replaces SQLite)
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono", "uuid"] }
+
+# Job queue - NATS JetStream (replaces SQLite polling)
+async-nats = "0.39"
+
+# Docker API (for build isolation, fallback from Firecracker)
+bollard = "0.18"
+
+# S3-compatible object storage (replaces local filesystem)
+rust-s3 = "0.35"
+
+# GitHub API
+octocrab = "0.43"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# UUIDs & time
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# HMAC for webhook verification
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Config
+dotenvy = "0.15"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# File system walk
+walkdir = "2"
+
+# Async stream utilities
+futures-util = "0.3"
+
+# DashMap for concurrent state
+dashmap = "6"
+
+# Metrics
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
