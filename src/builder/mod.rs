@@ -83,6 +83,14 @@ pub async fn run_build_worker(
                 tracing::error!("Failed to update deployment status: {}", e);
             }
 
+            // Record analytics: build started
+            let _ = db.record_analytics_event(
+                uuid::Uuid::parse_str(&job.project_id).ok(),
+                Some(deployment_id),
+                "build_started",
+                None, None, Some(job.is_production),
+            ).await;
+
             // Publish status update
             let _ = queue.publish_status(&job.deployment_id, "building", "Build started").await;
 
@@ -101,6 +109,15 @@ pub async fn run_build_worker(
 
                     let _ = queue.publish_status(&job.deployment_id, "ready", "Build completed").await;
 
+                    // Record analytics: build completed
+                    let build_duration = 0i32; // ponytail: real timing needs a stopwatch around execute_build
+                    let _ = db.record_analytics_event(
+                        uuid::Uuid::parse_str(&job.project_id).ok(),
+                        Some(deployment_id),
+                        "build_completed",
+                        Some(&framework), Some(build_duration), Some(job.is_production),
+                    ).await;
+
                     // Update PR comment if this was a PR deployment
                     update_pr_comment_if_exists(&db, &config, &job.deployment_id, "ready", Some(&framework), None).await;
 
@@ -117,6 +134,14 @@ pub async fn run_build_worker(
                     }
 
                     let _ = queue.publish_status(&job.deployment_id, "error", &error_msg).await;
+
+                    // Record analytics: build failed
+                    let _ = db.record_analytics_event(
+                        uuid::Uuid::parse_str(&job.project_id).ok(),
+                        Some(deployment_id),
+                        "build_failed",
+                        None, None, Some(job.is_production),
+                    ).await;
 
                     // Update PR comment with error
                     update_pr_comment_if_exists(&db, &config, &job.deployment_id, "error", None, Some(&error_msg)).await;

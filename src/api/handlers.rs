@@ -334,6 +334,11 @@ async fn handle_push(state: &AppState, payload: &serde_json::Value) -> Result<Js
     let d = state.db.create_deployment(project.id, sha, &branch, is_production, &url)
         .await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    // Record analytics
+    let _ = state.db.record_analytics_event(
+        Some(project.id), Some(d.id), "deployment_created", None, None, Some(is_production),
+    ).await;
+
     // Get env vars
     let env_vars = state.db.get_env_vars(project.id, if is_production { "production" } else { "preview" }).await
         .unwrap_or_default();
@@ -430,6 +435,27 @@ async fn handle_pull_request(state: &AppState, payload: &serde_json::Value) -> R
         "url": d.url,
         "pr_number": pr_number,
     })))
+}
+
+// ── Analytics ────────────────────────────────────────────────
+
+pub async fn analytics_summary(State(state): State<Arc<AppState>>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let summary = state.db.analytics_summary().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(summary))
+}
+
+pub async fn project_analytics(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let project_id = uuid::Uuid::parse_str(&id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid UUID".into()))?;
+    let analytics = state.db.project_analytics(project_id).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(analytics))
+}
+
+// ── Dashboard ─────────────────────────────────────────────────
+
+pub async fn dashboard() -> impl IntoResponse {
+    axum::response::Html(crate::dashboard::DASHBOARD_HTML)
 }
 
 // ── Helpers ───────────────────────────────────────────────────

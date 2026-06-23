@@ -1,6 +1,7 @@
 mod api;
 mod builder;
 mod config;
+mod dashboard;
 mod db;
 mod edge;
 mod github;

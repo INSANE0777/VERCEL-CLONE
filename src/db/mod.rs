@@ -95,6 +95,20 @@ impl Database {
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
             CREATE INDEX IF NOT EXISTS idx_middleware_project ON middleware_rules(project_id);
+
+            CREATE TABLE IF NOT EXISTS analytics_events (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+                deployment_id UUID REFERENCES deployments(id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL,
+                framework TEXT,
+                duration_secs INTEGER,
+                is_production BOOLEAN,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS idx_analytics_project ON analytics_events(project_id);
+            CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type);
+            CREATE INDEX IF NOT EXISTS idx_analytics_created ON analytics_events(created_at);
             "#,
         )
         .execute(&self.pool)
@@ -480,5 +494,121 @@ impl Database {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    // ── Analytics ───────────────────────────────────────────
+
+    pub async fn record_analytics_event(
+        &self,
+        project_id: Option<uuid::Uuid>,
+        deployment_id: Option<uuid::Uuid>,
+        event_type: &str,
+        framework: Option<&str>,
+        duration_secs: Option<i32>,
+        is_production: Option<bool>,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"INSERT INTO analytics_events (project_id, deployment_id, event_type, framework, duration_secs, is_production)
+               VALUES ($1, $2, $3, $4, $5, $6)"#
+        )
+        .bind(project_id)
+        .bind(deployment_id)
+        .bind(event_type)
+        .bind(framework)
+        .bind(duration_secs)
+        .bind(is_production)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn analytics_summary(&self) -> anyhow::Result<serde_json::Value> {
+        let total_deploys: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'deployment_created'"
+        ).fetch_one(&self.pool).await?;
+
+        let total_builds: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'build_completed'"
+        ).fetch_one(&self.pool).await?;
+
+        let successful_builds: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'build_completed' AND duration_secs IS NOT NULL"
+        ).fetch_one(&self.pool).await?;
+
+        let failed_builds: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'build_failed'"
+        ).fetch_one(&self.pool).await?;
+
+        let avg_duration: Option<(f64,)> = sqlx::query_as(
+            "SELECT AVG(duration_secs::float) FROM analytics_events WHERE event_type = 'build_completed' AND duration_secs IS NOT NULL"
+        ).fetch_optional(&self.pool).await?;
+
+        let total_projects: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM projects"
+        ).fetch_one(&self.pool).await?;
+
+        let framework_counts: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT framework, COUNT(*) as cnt FROM analytics_events WHERE event_type = 'build_completed' AND framework IS NOT NULL GROUP BY framework ORDER BY cnt DESC"
+        ).fetch_all(&self.pool).await?;
+
+        let last_7_days: Vec<(String, i64)> = sqlx::query_as(
+            r#"SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') as day, COUNT(*) as cnt
+               FROM analytics_events
+               WHERE event_type = 'deployment_created' AND created_at > now() - interval '7 days'
+               GROUP BY day ORDER BY day"#
+        ).fetch_all(&self.pool).await?;
+
+        let success_rate = if total_builds.0 > 0 {
+            (successful_builds.0 as f64 / total_builds.0 as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        Ok(serde_json::json!({
+            "total_projects": total_projects.0,
+            "total_deployments": total_deploys.0,
+            "total_builds": total_builds.0,
+            "successful_builds": successful_builds.0,
+            "failed_builds": failed_builds.0,
+            "success_rate": (success_rate * 10.0).round() / 10.0,
+            "avg_build_duration_secs": avg_duration.map(|(d,)| (d * 10.0).round() / 10.0).unwrap_or(0.0),
+            "frameworks": framework_counts.into_iter().map(|(f, c)| serde_json::json!({"framework": f, "count": c})).collect::<Vec<_>>(),
+            "deploys_last_7_days": last_7_days.into_iter().map(|(d, c)| serde_json::json!({"date": d, "count": c})).collect::<Vec<_>>(),
+        }))
+    }
+
+    pub async fn project_analytics(&self, project_id: uuid::Uuid) -> anyhow::Result<serde_json::Value> {
+        let total: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM deployments WHERE project_id = $1"
+        ).bind(project_id).fetch_one(&self.pool).await?;
+
+        let ready: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM deployments WHERE project_id = $1 AND status = 'ready'"
+        ).bind(project_id).fetch_one(&self.pool).await?;
+
+        let errors: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM deployments WHERE project_id = $1 AND status = 'error'"
+        ).bind(project_id).fetch_one(&self.pool).await?;
+
+        let avg_dur: Option<(f64,)> = sqlx::query_as(
+            r#"SELECT AVG(duration_secs::float) FROM analytics_events
+               WHERE project_id = $1 AND event_type = 'build_completed' AND duration_secs IS NOT NULL"#
+        ).bind(project_id).fetch_optional(&self.pool).await?;
+
+        let recent: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
+            r#"SELECT d.id::text, d.status, d.branch, d.framework
+               FROM deployments d WHERE d.project_id = $1
+               ORDER BY d.created_at DESC LIMIT 10"#
+        ).bind(project_id).fetch_all(&self.pool).await?;
+
+        Ok(serde_json::json!({
+            "total_deployments": total.0,
+            "ready": ready.0,
+            "errors": errors.0,
+            "avg_build_duration_secs": avg_dur.map(|(d,)| (d * 10.0).round() / 10.0).unwrap_or(0.0),
+            "recent_deployments": recent.into_iter().map(|(id, status, branch, fw)| serde_json::json!({
+                "id": id, "status": status, "branch": branch, "framework": fw
+            })).collect::<Vec<_>>(),
+        }))
     }
 }
