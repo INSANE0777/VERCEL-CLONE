@@ -68,11 +68,17 @@ impl ArtifactStore {
         deployment_id: &str,
         source_dir: &Path,
     ) -> anyhow::Result<u64> {
+        // Always copy locally so Caddy can serve the files
+        let local_bytes = self.copy_to_local(deployment_id, source_dir).await?;
+        
+        // Also upload to S3 if available (for durability / edge replication)
         if self.use_s3 {
-            self.upload_to_s3(deployment_id, source_dir).await
-        } else {
-            self.copy_to_local(deployment_id, source_dir).await
+            if let Err(e) = self.upload_to_s3(deployment_id, source_dir).await {
+                tracing::warn!("S3 upload failed (non-fatal, local copy exists): {}", e);
+            }
         }
+        
+        Ok(local_bytes)
     }
 
     /// Upload to S3
