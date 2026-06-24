@@ -532,9 +532,9 @@ impl Database {
             "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'build_failed'"
         ).fetch_one(&self.pool).await?;
 
-        let avg_duration: Option<(f64,)> = sqlx::query_as(
+        let avg_duration: (Option<f64>,) = sqlx::query_as(
             "SELECT AVG(duration_secs::float) FROM analytics_events WHERE event_type = 'build_completed' AND duration_secs IS NOT NULL"
-        ).fetch_optional(&self.pool).await?;
+        ).fetch_one(&self.pool).await?;
 
         let total_projects: (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM projects"
@@ -564,7 +564,7 @@ impl Database {
             "successful_builds": successful_builds.0,
             "failed_builds": failed_builds.0,
             "success_rate": (success_rate * 10.0).round() / 10.0,
-            "avg_build_duration_secs": avg_duration.map(|(d,)| (d * 10.0).round() / 10.0).unwrap_or(0.0),
+            "avg_build_duration_secs": avg_duration.0.map(|d| (d * 10.0).round() / 10.0).unwrap_or(0.0),
             "frameworks": framework_counts.into_iter().map(|(f, c)| serde_json::json!({"framework": f, "count": c})).collect::<Vec<_>>(),
             "deploys_last_7_days": last_7_days.into_iter().map(|(d, c)| serde_json::json!({"date": d, "count": c})).collect::<Vec<_>>(),
         }))
@@ -583,10 +583,10 @@ impl Database {
             "SELECT COUNT(*) FROM deployments WHERE project_id = $1 AND status = 'error'"
         ).bind(project_id).fetch_one(&self.pool).await?;
 
-        let avg_dur: Option<(f64,)> = sqlx::query_as(
+        let avg_dur: (Option<f64>,) = sqlx::query_as(
             r#"SELECT AVG(duration_secs::float) FROM analytics_events
                WHERE project_id = $1 AND event_type = 'build_completed' AND duration_secs IS NOT NULL"#
-        ).bind(project_id).fetch_optional(&self.pool).await?;
+        ).bind(project_id).fetch_one(&self.pool).await?;
 
         let recent: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
             r#"SELECT d.id::text, d.status, d.branch, d.framework
@@ -598,7 +598,7 @@ impl Database {
             "total_deployments": total.0,
             "ready": ready.0,
             "errors": errors.0,
-            "avg_build_duration_secs": avg_dur.map(|(d,)| (d * 10.0).round() / 10.0).unwrap_or(0.0),
+            "avg_build_duration_secs": avg_dur.0.map(|d| (d * 10.0).round() / 10.0).unwrap_or(0.0),
             "recent_deployments": recent.into_iter().map(|(id, status, branch, fw)| serde_json::json!({
                 "id": id, "status": status, "branch": branch, "framework": fw
             })).collect::<Vec<_>>(),
