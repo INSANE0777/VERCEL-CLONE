@@ -18,6 +18,7 @@ use bollard::container::{LogsOptions, RemoveContainerOptions, WaitContainerOptio
 use bollard::Docker;
 use futures_util::stream::StreamExt;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::path::PathBuf;
 
 /// Main build worker — consumes jobs from NATS JetStream
@@ -28,6 +29,7 @@ pub async fn run_build_worker(
     router: EdgeRouter,
     config: AppConfig,
     warm_pool: Option<Arc<warm_pool::WarmPool>>,
+    active_builds: Arc<AtomicUsize>,
 ) {
     tracing::info!("Build worker starting — connecting to NATS consumer...");
 
@@ -95,7 +97,9 @@ pub async fn run_build_worker(
             let _ = queue.publish_status(&job.deployment_id, "building", "Build started").await;
 
             // Execute build
+            active_builds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let result = execute_build(&db, &artifacts, &router, &config, &job, warm_pool.clone(), &queue).await;
+            active_builds.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
 
             match result {
                 Ok((logs, framework)) => {
@@ -345,6 +349,33 @@ async fn execute_build(
     // Reload Caddy to pick up the new deployment config
     if let Err(e) = router.reload().await {
         tracing::warn!("Failed to reload Caddy: {}", e);
+    }
+
+    // ── Step 7.5: Stream log lines to build_log_lines table ──
+    if let Ok(dep_id) = uuid::Uuid::parse_str(&job.deployment_id) {
+        for (i, line) in logs.lines().enumerate() {
+            if let Err(e) = db.append_log_line(dep_id, i as i32, line).await {
+                tracing::warn!("Failed to insert log line {}: {}", i, e);
+            }
+        }
+    }
+
+    // ── Step 7.6: Retention policy — cleanup old deployments ──
+    if let Ok(pid) = uuid::Uuid::parse_str(&job.project_id) {
+        match db.cleanup_old_deployments(pid, config.max_deployments_per_project as i64).await {
+            Ok(deleted) => {
+                for (dep_id, url) in &deleted {
+                    if let Some(url) = url {
+                        let _ = router.remove_deployment(url).await;
+                    }
+                    let _ = tokio::fs::remove_dir_all(artifacts.local_artifacts_dir(&dep_id.to_string())).await;
+                }
+                if !deleted.is_empty() {
+                    tracing::info!("Retention: cleaned up {} old deployment(s)", deleted.len());
+                }
+            }
+            Err(e) => tracing::warn!("Retention cleanup failed: {}", e),
+        }
     }
 
     // Cleanup

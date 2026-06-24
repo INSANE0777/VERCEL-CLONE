@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State, WebSocketUpgrade},
-    http::{HeaderMap, StatusCode},
+    extract::{Path, Query, State, WebSocketUpgrade},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -101,11 +101,29 @@ pub async fn get_deployment(State(state): State<Arc<AppState>>, Path(id): Path<S
     Ok(Json(deployment_to_response(d)))
 }
 
-pub async fn get_deployment_logs(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+#[derive(serde::Deserialize)]
+pub struct LogQueryParams {
+    pub limit: Option<usize>,
+}
+
+pub async fn get_deployment_logs(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(params): Query<LogQueryParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let uuid = uuid::Uuid::parse_str(&id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid UUID".into()))?;
     let d = state.db.get_deployment(uuid).await
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
-    Ok(Json(serde_json::json!({ "id": d.id.to_string(), "status": d.status, "logs": d.build_logs.unwrap_or_default() })))
+    let limit = params.limit.unwrap_or(500);
+    let lines = state.db.get_log_lines(uuid, 0, limit as i64).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Fall back to build_logs TEXT column if no structured log lines exist
+    let logs = if lines.is_empty() {
+        d.build_logs.unwrap_or_default()
+    } else {
+        lines.iter().map(|(_, c)| c.as_str()).collect::<Vec<_>>().join("\n")
+    };
+    Ok(Json(serde_json::json!({ "id": d.id.to_string(), "status": d.status, "logs": logs, "line_count": lines.len() })))
 }
 
 pub async fn trigger_deploy(State(state): State<Arc<AppState>>, Path(id): Path<String>, Json(req): Json<ManualDeployRequest>) -> Result<(StatusCode, Json<DeploymentResponse>), (StatusCode, String)> {
@@ -461,7 +479,11 @@ pub async fn project_analytics(State(state): State<Arc<AppState>>, Path(id): Pat
 // ── Dashboard ─────────────────────────────────────────────────
 
 pub async fn dashboard() -> impl IntoResponse {
-    axum::response::Html(crate::dashboard::DASHBOARD_HTML)
+    (
+        [(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=300"))],
+        [(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))],
+        axum::response::Html(crate::dashboard::DASHBOARD_HTML),
+    )
 }
 
 // ── Helpers ───────────────────────────────────────────────────

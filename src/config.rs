@@ -38,6 +38,14 @@ pub struct AppConfig {
     // ── Scaling ──
     pub max_concurrent_builds: usize,
     pub warm_pool_size: usize,
+
+    // ── Auth / Security ──
+    pub api_key: String,
+    pub dashboard_password: String,
+    pub encryption_key: String,
+
+    // ── Retention ──
+    pub max_deployments_per_project: usize,
 }
 
 impl AppConfig {
@@ -90,6 +98,19 @@ impl AppConfig {
             warm_pool_size: env_or("WARM_POOL_SIZE", "2")
                 .parse()
                 .context("WARM_POOL_SIZE must be a number")?,
+
+            // Auth / Security
+            api_key: env_or("API_KEY", ""),
+            dashboard_password: env_or("DASHBOARD_PASSWORD", ""),
+            encryption_key: env_or(
+                "ENCRYPTION_KEY",
+                "vercel-clone-dev-key-change-in-prod",
+            ),
+
+            // Retention
+            max_deployments_per_project: env_or("MAX_DEPLOYMENTS_PER_PROJECT", "20")
+                .parse()
+                .context("MAX_DEPLOYMENTS_PER_PROJECT must be a number")?,
         })
     }
 }

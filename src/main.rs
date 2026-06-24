@@ -20,10 +20,87 @@ use github::PrBot;
 use queue::BuildQueue;
 use storage::ArtifactStore;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tracing_subscriber::EnvFilter;
+
+/// Remove orphaned build-* containers from previous runs.
+async fn cleanup_orphaned_containers() {
+    let docker = match bollard::Docker::connect_with_local_defaults() {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+
+    let containers = match docker.list_containers(Some(bollard::container::ListContainersOptions::<String> {
+        all: true,
+        ..Default::default()
+    })).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Failed to list containers for cleanup: {}", e);
+            return;
+        }
+    };
+
+    let mut cleaned = 0;
+    for container in &containers {
+        if let Some(names) = &container.names {
+            for name in names {
+                if name.starts_with("/build-") || name.starts_with("build-") {
+                    if let Some(id) = &container.id {
+                        let _ = docker.remove_container(id, Some(bollard::container::RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        })).await;
+                        cleaned += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    if cleaned > 0 {
+        tracing::info!("Cleaned up {} orphaned build containers", cleaned);
+    } else {
+        tracing::info!("No orphaned build containers found");
+    }
+}
+
+/// Wait for SIGTERM/SIGINT, then wait for in-flight builds to finish (30s timeout).
+async fn shutdown_signal(active_builds: Arc<AtomicUsize>) {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
+        tokio::select! {
+            _ = sigterm.recv() => tracing::info!("Received SIGTERM"),
+            _ = sigint.recv() => tracing::info!("Received SIGINT"),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
+        tracing::info!("Received Ctrl+C");
+    }
+
+    tracing::info!("Shutting down, waiting for in-flight builds...");
+    let timeout = std::time::Duration::from_secs(30);
+    let start = std::time::Instant::now();
+    loop {
+        let count = active_builds.load(Ordering::Relaxed);
+        if count == 0 {
+            tracing::info!("All builds completed, exiting");
+            break;
+        }
+        if start.elapsed() >= timeout {
+            tracing::warn!("Shutdown timeout reached, forcing exit ({} builds still active)", count);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -50,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("vercel-clone v{} starting on port {}", env!("CARGO_PKG_VERSION"), config.port);
 
     // PostgreSQL database
-    let db = Database::new(&config.database_url).await?;
+    let db = Database::new(&config.database_url, &config.encryption_key).await?;
     tracing::info!("PostgreSQL connected");
 
     // NATS JetStream queue
@@ -100,6 +177,11 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("GitHub PR bot disabled (no GITHUB_TOKEN)");
     }
 
+    // Cleanup orphaned build containers from previous runs
+    cleanup_orphaned_containers().await;
+
+    let active_builds = Arc::new(AtomicUsize::new(0));
+
     let state = Arc::new(AppState {
         db: db.clone(),
         config: config.clone(),
@@ -108,7 +190,7 @@ async fn main() -> anyhow::Result<()> {
         router: router.clone(),
         warm_pool: warm_pool.clone(),
         pr_bot: pr_bot.clone(),
-        active_builds: Arc::new(AtomicUsize::new(0)),
+        active_builds: active_builds.clone(),
         start_time: SystemTime::now(),
     });
 
@@ -120,18 +202,21 @@ async fn main() -> anyhow::Result<()> {
         let worker_router = router.clone();
         let worker_config = config.clone();
         let worker_pool = warm_pool.clone();
+        let worker_builds = active_builds.clone();
 
         tokio::spawn(async move {
             tracing::info!("Build worker {} starting", i);
-            builder::run_build_worker(worker_db, worker_queue, worker_artifacts, worker_router, worker_config, worker_pool).await;
+            builder::run_build_worker(worker_db, worker_queue, worker_artifacts, worker_router, worker_config, worker_pool, worker_builds).await;
         });
     }
 
-    // Start API server
+    // Start API server with graceful shutdown
     let app = api::create_router(state);
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port)).await?;
     tracing::info!("API server listening on 0.0.0.0:{}", config.port);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(active_builds))
+        .await?;
 
     Ok(())
 }

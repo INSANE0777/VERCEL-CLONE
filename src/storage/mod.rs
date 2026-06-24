@@ -2,13 +2,15 @@ use s3::bucket::Bucket;
 use s3::creds::Credentials;
 use s3::Region;
 use std::path::Path;
+use std::sync::Arc;
 use walkdir::WalkDir;
+use futures_util::stream::{self, StreamExt};
 
 /// S3-compatible object storage for build artifacts.
 /// Falls back to local filesystem if S3 is unavailable.
 #[derive(Clone)]
 pub struct ArtifactStore {
-    bucket: Option<Box<Bucket>>,
+    bucket: Option<Arc<Box<Bucket>>>,
     local_dir: String,
     use_s3: bool,
 }
@@ -33,7 +35,7 @@ impl ArtifactStore {
                     },
                     creds,
                 ) {
-                    Ok(b) => Some(b.with_path_style()),
+                    Ok(b) => Some(Arc::new(b.with_path_style())),
                     Err(e) => {
                         tracing::warn!("Failed to create S3 bucket: {}", e);
                         None
@@ -81,34 +83,42 @@ impl ArtifactStore {
         Ok(local_bytes)
     }
 
-    /// Upload to S3
+    /// Upload to S3 with parallel (8 concurrent) uploads
     async fn upload_to_s3(
         &self,
         deployment_id: &str,
         source_dir: &Path,
     ) -> anyhow::Result<u64> {
         let bucket = self.bucket.as_ref().unwrap();
-        let mut total_bytes: u64 = 0;
 
+        let mut files = Vec::new();
         for entry in WalkDir::new(source_dir).into_iter().filter_map(|e| e.ok()) {
             if !entry.file_type().is_file() {
                 continue;
             }
-
-            let relative = entry.path().strip_prefix(source_dir)?;
+            let relative = entry.path().strip_prefix(source_dir)?.to_path_buf();
             let key = format!("artifacts/{}/{}", deployment_id, relative.display());
-            let content = tokio::fs::read(entry.path()).await?;
-            let content_len = content.len() as u64;
-
-            bucket
-                .put_object(&key, &content)
-                .await?;
-
-            total_bytes += content_len;
+            files.push((entry.path().to_path_buf(), key));
         }
 
+        let total_bytes: u64 = stream::iter(files)
+            .map(|(path, key)| {
+                let bucket = bucket.clone();
+                async move {
+                    let content = tokio::fs::read(&path).await?;
+                    let len = content.len() as u64;
+                    bucket.put_object(&key, &content).await?;
+                    Ok::<u64, anyhow::Error>(len)
+                }
+            })
+            .buffer_unordered(8)
+            .collect::<Vec<Result<u64, anyhow::Error>>>()
+            .await
+            .into_iter()
+            .sum::<Result<u64, anyhow::Error>>()?;
+
         tracing::info!(
-            "Uploaded {} bytes to S3 for deployment {}",
+            "Uploaded {} bytes to S3 for deployment {} (parallel)",
             total_bytes,
             deployment_id
         );
@@ -148,18 +158,33 @@ impl ArtifactStore {
 
         if self.use_s3 {
             let bucket = self.bucket.as_ref().unwrap();
-            let mut total_bytes: u64 = 0;
 
+            let mut files = Vec::new();
             for entry in WalkDir::new(source_dir).into_iter().filter_map(|e| e.ok()) {
                 if !entry.file_type().is_file() {
                     continue;
                 }
-                let relative = entry.path().strip_prefix(source_dir)?;
+                let relative = entry.path().strip_prefix(source_dir)?.to_path_buf();
                 let key = format!("{}/{}", path, relative.display());
-                let content = tokio::fs::read(entry.path()).await?;
-                total_bytes += content.len() as u64;
-                bucket.put_object(&key, &content).await?;
+                files.push((entry.path().to_path_buf(), key));
             }
+
+            let total_bytes: u64 = stream::iter(files)
+                .map(|(path, key)| {
+                    let bucket = bucket.clone();
+                    async move {
+                        let content = tokio::fs::read(&path).await?;
+                        let len = content.len() as u64;
+                        bucket.put_object(&key, &content).await?;
+                        Ok::<u64, anyhow::Error>(len)
+                    }
+                })
+                .buffer_unordered(8)
+                .collect::<Vec<Result<u64, anyhow::Error>>>()
+                .await
+                .into_iter()
+                .sum::<Result<u64, anyhow::Error>>()?;
+
             Ok(total_bytes)
         } else {
             let dest = Path::new(&self.local_dir).join(&path);

@@ -4,10 +4,39 @@ use crate::models::{Project, Deployment, EnvVar, BuildCache, Domain, MiddlewareR
 #[derive(Clone)]
 pub struct Database {
     pool: PgPool,
+    encryption_key: String,
+}
+
+/// XOR cipher for env var encryption at rest.
+/// NOT production-grade — replace with AES-256-GCM.
+fn encrypt(plaintext: &str, key: &str) -> String {
+    let key_bytes = key.as_bytes();
+    let result: Vec<u8> = plaintext
+        .bytes()
+        .enumerate()
+        .map(|(i, b)| b ^ key_bytes[i % key_bytes.len()])
+        .collect();
+    hex::encode(result)
+}
+
+/// Decrypt XOR-encrypted hex string. Returns plaintext as-is if not valid hex
+/// (handles values stored before encryption was enabled).
+fn decrypt(ciphertext: &str, key: &str) -> String {
+    let key_bytes = key.as_bytes();
+    let ciphertext_bytes = match hex::decode(ciphertext) {
+        Ok(bytes) => bytes,
+        Err(_) => return ciphertext.to_string(),
+    };
+    let result: Vec<u8> = ciphertext_bytes
+        .iter()
+        .enumerate()
+        .map(|(i, b)| b ^ key_bytes[i % key_bytes.len()])
+        .collect();
+    String::from_utf8(result).unwrap_or_default()
 }
 
 impl Database {
-    pub async fn new(database_url: &str) -> anyhow::Result<Self> {
+    pub async fn new(database_url: &str, encryption_key: &str) -> anyhow::Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(10)
             .min_connections(2)
@@ -17,7 +46,7 @@ impl Database {
             .connect(database_url)
             .await?;
 
-        let db = Self { pool };
+        let db = Self { pool, encryption_key: encryption_key.to_string() };
         db.run_migrations().await?;
         Ok(db)
     }
@@ -103,6 +132,14 @@ impl Database {
             "CREATE INDEX IF NOT EXISTS idx_analytics_project ON analytics_events(project_id)",
             "CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type)",
             "CREATE INDEX IF NOT EXISTS idx_analytics_created ON analytics_events(created_at)",
+            r#"CREATE TABLE IF NOT EXISTS build_log_lines (
+                id BIGSERIAL PRIMARY KEY,
+                deployment_id UUID NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
+                line_number INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )"#,
+            "CREATE INDEX IF NOT EXISTS idx_log_lines_deployment ON build_log_lines(deployment_id)",
         ];
 
         for stmt in &statements {
@@ -304,6 +341,7 @@ impl Database {
         value: &str,
         environment: &str,
     ) -> anyhow::Result<EnvVar> {
+        let encrypted_value = encrypt(value, &self.encryption_key);
         let env_var = sqlx::query_as::<_, EnvVar>(
             r#"INSERT INTO env_vars (project_id, key, value, environment)
                VALUES ($1, $2, $3, $4)
@@ -313,7 +351,7 @@ impl Database {
         )
         .bind(project_id)
         .bind(key)
-        .bind(value)
+        .bind(&encrypted_value)
         .bind(environment)
         .fetch_one(&self.pool)
         .await?;
@@ -325,13 +363,16 @@ impl Database {
         project_id: uuid::Uuid,
         environment: &str,
     ) -> anyhow::Result<Vec<EnvVar>> {
-        let vars = sqlx::query_as::<_, EnvVar>(
+        let mut vars = sqlx::query_as::<_, EnvVar>(
             "SELECT * FROM env_vars WHERE project_id = $1 AND environment = $2",
         )
         .bind(project_id)
         .bind(environment)
         .fetch_all(&self.pool)
         .await?;
+        for var in &mut vars {
+            var.value = decrypt(&var.value, &self.encryption_key);
+        }
         Ok(vars)
     }
 
@@ -570,6 +611,67 @@ impl Database {
             "frameworks": framework_counts.into_iter().map(|(f, c)| serde_json::json!({"framework": f, "count": c})).collect::<Vec<_>>(),
             "deploys_last_7_days": last_7_days.into_iter().map(|(d, c)| serde_json::json!({"date": d, "count": c})).collect::<Vec<_>>(),
         }))
+    }
+
+    // ── Build Log Lines ────────────────────────────────────
+
+    pub async fn append_log_line(
+        &self,
+        deployment_id: uuid::Uuid,
+        line_number: i32,
+        content: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO build_log_lines (deployment_id, line_number, content) VALUES ($1, $2, $3)",
+        )
+        .bind(deployment_id)
+        .bind(line_number)
+        .bind(content)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_log_lines(
+        &self,
+        deployment_id: uuid::Uuid,
+        offset: i64,
+        limit: i64,
+    ) -> anyhow::Result<Vec<(i32, String)>> {
+        let lines: Vec<(i32, String)> = sqlx::query_as(
+            "SELECT line_number, content FROM build_log_lines WHERE deployment_id = $1 ORDER BY line_number ASC OFFSET $2 LIMIT $3",
+        )
+        .bind(deployment_id)
+        .bind(offset)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(lines)
+    }
+
+    // ── Deployment Retention ──────────────────────────────
+
+    pub async fn cleanup_old_deployments(
+        &self,
+        project_id: uuid::Uuid,
+        keep_count: i64,
+    ) -> anyhow::Result<Vec<(uuid::Uuid, Option<String>)>> {
+        let to_delete: Vec<(uuid::Uuid, Option<String>)> = sqlx::query_as(
+            "SELECT id, url FROM deployments WHERE project_id = $1 ORDER BY created_at DESC OFFSET $2",
+        )
+        .bind(project_id)
+        .bind(keep_count)
+        .fetch_all(&self.pool)
+        .await?;
+
+        for (id, _) in &to_delete {
+            sqlx::query("DELETE FROM deployments WHERE id = $1")
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        Ok(to_delete)
     }
 
     pub async fn project_analytics(&self, project_id: uuid::Uuid) -> anyhow::Result<serde_json::Value> {

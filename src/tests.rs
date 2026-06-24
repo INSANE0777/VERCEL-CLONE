@@ -264,6 +264,9 @@ mod config_tests {
         assert_eq!(config.max_concurrent_builds, 4);
         assert_eq!(config.build_timeout_secs, 600);
         assert_eq!(config.nats_stream_name, "BUILDS");
+        assert_eq!(config.max_deployments_per_project, 20);
+        assert_eq!(config.encryption_key, "vercel-clone-dev-key-change-in-prod");
+        assert!(config.api_key.is_empty());
     }
 
     #[test]
@@ -358,6 +361,14 @@ mod migration_tests {
             "CREATE INDEX IF NOT EXISTS idx_analytics_project ON analytics_events(project_id)".to_string(),
             "CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type)".to_string(),
             "CREATE INDEX IF NOT EXISTS idx_analytics_created ON analytics_events(created_at)".to_string(),
+            r#"CREATE TABLE IF NOT EXISTS build_log_lines (
+                id BIGSERIAL PRIMARY KEY,
+                deployment_id UUID NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
+                line_number INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )"#.to_string(),
+            "CREATE INDEX IF NOT EXISTS idx_log_lines_deployment ON build_log_lines(deployment_id)".to_string(),
         ]
     }
 
@@ -413,5 +424,13 @@ mod migration_tests {
         let statements = get_migration_statements();
         let combined = statements.join(" ");
         assert!(combined.contains("CREATE TABLE IF NOT EXISTS analytics_events"));
+    }
+
+    #[test]
+    fn migration_creates_build_log_lines_table() {
+        let statements = get_migration_statements();
+        let combined = statements.join(" ");
+        assert!(combined.contains("CREATE TABLE IF NOT EXISTS build_log_lines"));
+        assert!(combined.contains("idx_log_lines_deployment"));
     }
 }

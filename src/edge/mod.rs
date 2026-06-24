@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod middleware;
 
@@ -10,6 +12,8 @@ use middleware::MiddlewareRule;
 pub struct EdgeRouter {
     config_dir: PathBuf,
     base_domain: String,
+    /// True when routes were added via Caddy admin API (no reload needed)
+    api_mode: Arc<AtomicBool>,
 }
 
 impl EdgeRouter {
@@ -19,6 +23,61 @@ impl EdgeRouter {
         Self {
             config_dir,
             base_domain: base_domain.to_string(),
+            api_mode: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn route_id_for_url(&self, deployment_url: &str) -> String {
+        format!("route-{}", deployment_url.replace('.', "-").replace('*', "_"))
+    }
+
+    /// Try to add a route via Caddy admin API (atomic, no restart needed).
+    /// Returns true on success, false to fall back to file-based approach.
+    async fn try_add_route_api(
+        &self,
+        _deployment_id: &str,
+        deployment_url: &str,
+        artifacts_dir: &str,
+        framework: &str,
+    ) -> bool {
+        let client = reqwest::Client::new();
+        let route_id = self.route_id_for_url(deployment_url);
+
+        let route = serde_json::json!({
+            "@id": route_id,
+            "match": [{"host": [deployment_url]}],
+            "handle": [{
+                "handler": "file_server",
+                "root": artifacts_dir
+            }],
+            "terminal": true
+        });
+
+        match client
+            .post("http://caddy:2019/config/apps/http/servers/srv0/routes")
+            .header("Content-Type", "application/json")
+            .json(&route)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                tracing::info!(
+                    "Added route via Caddy admin API: {} (framework: {})",
+                    deployment_url, framework
+                );
+                true
+            }
+            Ok(resp) => {
+                tracing::debug!(
+                    "Caddy admin API returned {}, falling back to file-based",
+                    resp.status()
+                );
+                false
+            }
+            Err(_) => {
+                tracing::debug!("Caddy admin API unavailable, using file-based");
+                false
+            }
         }
     }
 
@@ -113,6 +172,13 @@ impl EdgeRouter {
         ));
         tokio::fs::write(&config_path, config).await?;
 
+        // Try atomic route add via Caddy admin API (eliminates 2s restart downtime)
+        if self.try_add_route_api(deployment_id, deployment_url, artifacts_dir, framework).await {
+            self.api_mode.store(true, Ordering::Relaxed);
+        } else {
+            self.api_mode.store(false, Ordering::Relaxed);
+        }
+
         tracing::info!(
             "Generated Caddy config: {} → {}",
             deployment_url,
@@ -123,6 +189,15 @@ impl EdgeRouter {
 
     /// Remove a deployment's Caddy config
     pub async fn remove_deployment(&self, deployment_url: &str) -> anyhow::Result<()> {
+        // Try removing via Caddy admin API first
+        let client = reqwest::Client::new();
+        let route_id = self.route_id_for_url(deployment_url);
+        let _ = client
+            .delete(format!("http://caddy:2019/id/{}", route_id))
+            .send()
+            .await;
+
+        // Also remove file-based config
         let config_path = self.config_dir.join(format!(
             "{}.caddy",
             deployment_url.replace('.', "_").replace('*', "_wildcard")
@@ -182,6 +257,12 @@ impl EdgeRouter {
     /// Reads the Caddyfile from the mounted volume, adapts it via Caddy's
     /// /adapt endpoint, then loads the JSON config. Faster than container restart.
     pub async fn reload(&self) -> anyhow::Result<()> {
+        // No-op if routes were added via admin API (atomic updates, no restart needed)
+        if self.api_mode.load(Ordering::Relaxed) {
+            tracing::debug!("Caddy admin API mode — no reload needed");
+            return Ok(());
+        }
+
         let client = reqwest::Client::new();
 
         // Read the Caddyfile from the shared volume mount
