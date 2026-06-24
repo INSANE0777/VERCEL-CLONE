@@ -513,7 +513,7 @@ async fn run_build_in_container(
         .unwrap_or(".");
 
     let build_script = format!(
-        "cd /builds/{} && {} && {}",
+        "cd /builds/{} && chmod -R +x node_modules/.bin 2>/dev/null; {} && {}",
         build_subdir, fw.install_command, fw.build_command
     );
 
