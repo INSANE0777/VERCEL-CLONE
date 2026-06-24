@@ -165,7 +165,10 @@ tr:hover td { background: var(--canvas-soft); }
         <h2 id="pd-name"></h2>
         <div class="project-meta" id="pd-meta"></div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="deployProject()">Deploy Now</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="deployProject()">Deploy Now</button>
+        <button class="btn btn-sm" style="background:#1a1a1a;color:#e5484d;border:1px solid #e5484d" onclick="deleteProject()">Delete Project</button>
+      </div>
     </div>
     <div class="stats-grid" id="pd-stats"></div>
     <div class="card">
@@ -271,7 +274,10 @@ async function loadProjects() {
           <div style="font-weight:600;font-size:16px">${p.name}</div>
           <div style="color:var(--mute);font-size:13px">${p.github_repo_full_name} · ${p.production_branch}</div>
         </div>
-        <div>${latest ? badge(latest.status) : '<span style="color:var(--mute)">No deployments</span>'}</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          ${latest ? badge(latest.status) : '<span style="color:var(--mute)">No deployments</span>'}
+          <button class="btn btn-sm" style="background:#1a1a1a;color:#e5484d;border:1px solid #e5484d;padding:4px 10px" onclick="event.stopPropagation();deleteProjectById('${p.id}','${p.name}')">Delete</button>
+        </div>
       </div>
     </div>`;
   }
@@ -313,6 +319,21 @@ async function deployProject() {
   if (!currentProjectId) return;
   await api('/projects/' + currentProjectId + '/deploy', { method: 'POST', body: '{}' });
   openProject(currentProjectId);
+}
+
+async function deleteProject() {
+  if (!currentProjectId) return;
+  const name = document.getElementById('pd-name').textContent;
+  deleteProjectById(currentProjectId, name);
+}
+
+async function deleteProjectById(id, name) {
+  if (!confirm('Delete project "' + name + '" and all its deployments? This cannot be undone.')) return;
+  await api('/projects/' + id, { method: 'DELETE' });
+  currentProjectId = null;
+  showPage('page-projects');
+  document.querySelector('[data-page="projects"]').classList.add('active');
+  loadProjects();
 }
 
 // ── View Logs ──

@@ -486,11 +486,12 @@ async fn run_build_in_container(
         // consume stream
     }
 
-    // Mount the build directory via host bind mount
+    // Mount the builds volume (named volume — symlinks work properly,
+    // unlike Windows bind mounts where npm .bin/ symlinks lose exec bit)
     let mount = Mount {
         target: Some("/builds".to_string()),
-        source: Some("/tmp/vercel-clone-builds".to_string()),
-        typ: Some(MountTypeEnum::BIND),
+        source: Some("vercel-builds".to_string()),
+        typ: Some(MountTypeEnum::VOLUME),
         read_only: Some(false),
         ..Default::default()
     };
@@ -513,7 +514,7 @@ async fn run_build_in_container(
         .unwrap_or(".");
 
     let build_script = format!(
-        "cd /builds/{} && chmod -R +x node_modules/.bin 2>/dev/null; {} && {}",
+        "cd /builds/{} && {} && {}",
         build_subdir, fw.install_command, fw.build_command
     );
 
