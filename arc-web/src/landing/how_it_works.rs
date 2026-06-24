@@ -12,22 +12,25 @@ pub fn HowItWorks() -> impl IntoView {
     view! {
         <section style="background: var(--tertiary); padding: 104px 24px;">
             <div style="max-width: 1200px; margin: 0 auto;">
-                <h2 class="headline-lg" style="color: var(--secondary); margin-bottom: 52px;">
+                <h2 class="headline-lg anim-fade-up" style="color: var(--secondary); margin-bottom: 52px;">
                     "How it works."
                 </h2>
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;">
-                    {steps.into_iter().map(|(num, title, desc)| view! {
-                        <div>
-                            <div class="label-lg" style="color: var(--primary); margin-bottom: 16px;">
-                                {num}
+                    {steps.into_iter().enumerate().map(|(i, (num, title, desc))| {
+                        let delay = format!("delay-{}", i + 1);
+                        view! {
+                            <div class={format!("anim-fade-up {}", delay)}>
+                                <div class="label-lg" style="color: var(--primary); margin-bottom: 16px;">
+                                    {num}
+                                </div>
+                                <h3 class="headline-sm" style="color: var(--secondary); margin-bottom: 8px;">
+                                    {title}
+                                </h3>
+                                <p class="body-sm" style="color: #9ca3af;">
+                                    {desc}
+                                </p>
                             </div>
-                            <h3 class="headline-sm" style="color: var(--secondary); margin-bottom: 8px;">
-                                {title}
-                            </h3>
-                            <p class="body-sm" style="color: #9ca3af;">
-                                {desc}
-                            </p>
-                        </div>
+                        }
                     }).collect_view()}
                 </div>
             </div>

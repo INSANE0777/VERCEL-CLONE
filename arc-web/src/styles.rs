@@ -215,6 +215,146 @@ a { color: inherit; text-decoration: none; }
 /* ── Stat grid ── */
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
 
+/* ── Animations ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-32px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@keyframes barGrow {
+  from { height: 0; }
+  to { height: var(--bar-h, 100%); }
+}
+@keyframes fwGrow {
+  from { width: 0; }
+  to { width: var(--fw-w, 0%); }
+}
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Animation utility classes */
+.anim-fade-up { animation: fadeInUp 0.6s ease-out forwards; opacity: 0; }
+.anim-fade-in { animation: fadeIn 0.5s ease-out forwards; opacity: 0; }
+.anim-slide-left { animation: slideInLeft 0.5s ease-out forwards; opacity: 0; }
+.anim-scale-in { animation: scaleIn 0.4s ease-out forwards; opacity: 0; }
+
+/* Stagger delays */
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.2s; }
+.delay-3 { animation-delay: 0.3s; }
+.delay-4 { animation-delay: 0.4s; }
+.delay-5 { animation-delay: 0.5s; }
+.delay-6 { animation-delay: 0.6s; }
+
+/* Cursor blink for terminal */
+.cursor-blink::after {
+  content: '▊';
+  animation: blink 1s step-end infinite;
+  color: var(--primary);
+}
+
+/* ── Hover transforms ── */
+.card-hover {
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  border-color: var(--primary);
+}
+
+/* Button press effect */
+.btn { transition: transform 0.1s ease, opacity 0.15s; }
+.btn:active { transform: scale(0.97); }
+
+/* Stat card hover */
+.stat-card { transition: border-color 0.2s ease; }
+.stat-card:hover { border-color: var(--primary); }
+
+/* Table row slide */
+.table tbody tr {
+  animation: fadeIn 0.3s ease-out forwards;
+  opacity: 0;
+}
+
+/* Badge pulse for building status */
+.badge-building { animation: pulse 1.5s ease-in-out infinite; }
+
+/* Modal animation */
+.modal-overlay { animation: fadeIn 0.2s ease-out forwards; }
+.modal { animation: scaleIn 0.25s ease-out forwards; }
+
+/* Sidebar link slide indicator */
+.sidebar-link { position: relative; overflow: hidden; }
+.sidebar-link::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--primary);
+  transform: scaleY(0);
+  transition: transform 0.2s ease;
+}
+.sidebar-link.active::before { transform: scaleY(1); }
+
+/* CTA gradient text */
+.cta-glow {
+  background: linear-gradient(90deg, var(--tertiary), #333, var(--tertiary));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientShift 3s ease infinite;
+}
+
+/* CTA section hover */
+.cta-section { transition: background 0.3s ease; }
+.cta-section:hover { background: var(--primary-80) !important; }
+
+/* Terminal typing lines */
+.term-line {
+  animation: fadeInUp 0.3s ease-out forwards;
+  opacity: 0;
+}
+
+/* Bar chart grow */
+.bar { animation: barGrow 0.6s ease-out forwards; }
+
+/* Framework fill grow */
+.fw-fill { animation: fwGrow 0.6s ease-out forwards; }
+
+/* Scroll reveal — elements with this class start hidden, IntersectionObserver toggles .visible */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .dash-sidebar { width: 60px; }

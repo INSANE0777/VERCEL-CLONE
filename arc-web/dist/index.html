@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARC — Deploy at the speed of thought</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app"></div>
+    <script type="module">
+        import init, * as bindings from './arc-web.js';
+        init('./arc-web_bg.wasm').then(() => {
+            console.log('ARC WASM loaded');
+        }).catch(e => {
+            console.error('ARC WASM failed:', e);
+            document.getElementById('app').innerHTML = '<div style="color:#D94B4B;font-family:monospace;padding:40px">Failed to load ARC. Check console.</div>';
+        });
+    </script>
+</body>
+</html>

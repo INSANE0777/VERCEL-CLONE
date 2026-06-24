@@ -11,20 +11,27 @@ pub fn Features() -> impl IntoView {
     view! {
         <section style="background: var(--surface); padding: 104px 24px;">
             <div style="max-width: 1200px; margin: 0 auto;">
-                <h2 class="headline-lg" style="color: var(--on-surface); margin-bottom: 52px;">
+                <h2 class="headline-lg anim-fade-up" style="color: var(--on-surface); margin-bottom: 52px;">
                     "Built for speed."
                 </h2>
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
-                    {features.into_iter().map(|(title, desc)| view! {
-                        <div class="card" style="padding: 32px;">
-                            <div style="width: 32px; height: 32px; background: var(--primary); margin-bottom: 24px;"></div>
-                            <h3 class="headline-sm" style="color: var(--on-surface); margin-bottom: 12px;">
-                                {title}
-                            </h3>
-                            <p class="body-md" style="color: #6b7280;">
-                                {desc}
-                            </p>
-                        </div>
+                    {features.into_iter().enumerate().map(|(i, (title, desc))| {
+                        let delay = format!("delay-{}", i + 1);
+                        view! {
+                            <div class={format!("card card-hover anim-fade-up {}", delay)} style="padding: 32px;">
+                                <div style="width: 32px; height: 32px; background: var(--primary); margin-bottom: 24px; transition: transform 0.3s ease;"
+                                     on:mouseenter=move |_: leptos::ev::MouseEvent| {
+                                         // CSS hover handles this via card-hover class
+                                     }>
+                                </div>
+                                <h3 class="headline-sm" style="color: var(--on-surface); margin-bottom: 12px;">
+                                    {title}
+                                </h3>
+                                <p class="body-md" style="color: #6b7280;">
+                                    {desc}
+                                </p>
+                            </div>
+                        }
                     }).collect_view()}
                 </div>
             </div>

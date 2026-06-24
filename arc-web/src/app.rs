@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use leptos::either::Either;
+use std::sync::OnceLock;
 
 use crate::styles::STYLES;
 use crate::landing;
@@ -16,35 +17,38 @@ pub enum Route {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub route: RwSignal<Route>,
     pub api_base: String,
 }
 
 pub fn provide_app_state() {
-    let route = RwSignal::new(Route::Landing);
-    let api_base = "/api".to_string();
-    provide_context(AppState { route, api_base });
+    provide_context(AppState { api_base: "/api".to_string() });
 }
 
 pub fn use_app_state() -> AppState {
-    use_context::<AppState>().expect("AppState not provided")
+    use_context::<AppState>().unwrap_or(AppState { api_base: "/api".to_string() })
+}
+
+// Global route signal — created once, accessible from anywhere
+static ROUTE: OnceLock<RwSignal<Route>> = OnceLock::new();
+
+pub fn route_signal() -> RwSignal<Route> {
+    *ROUTE.get_or_init(|| RwSignal::new(Route::Landing))
+}
+
+pub fn navigate(route: Route) {
+    route_signal().set(route);
 }
 
 #[component]
 pub fn App() -> impl IntoView {
     provide_app_state();
-    let state = use_app_state();
+    let route = route_signal();
 
     view! {
         <style>{STYLES}</style>
-        {move || match state.route.get() {
+        {move || match route.get() {
             Route::Landing => Either::Left(landing::LandingPage()),
             _ => Either::Right(dashboard::DashboardShell()),
         }}
     }
-}
-
-pub fn navigate(route: Route) {
-    let state = use_app_state();
-    state.route.set(route);
 }
