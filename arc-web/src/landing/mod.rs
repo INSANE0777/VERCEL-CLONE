@@ -3,6 +3,11 @@ pub mod features;
 pub mod how_it_works;
 pub mod code_block;
 pub mod footer;
+pub mod pricing;
+pub mod faq;
+pub mod comparison;
+pub mod testimonials;
+pub mod cta_final;
 
 use leptos::prelude::*;
 use crate::app::navigate;
@@ -12,7 +17,7 @@ use crate::app::Route;
 pub fn LandingPage() -> impl IntoView {
     view! {
         <div style="background: var(--tertiary); color: var(--secondary); min-height: 100vh;">
-            // Promo bar
+            // 1. Promo bar
             <div class="anim-fade-in" style="background: #111; border-bottom: 1px solid #1f1f1f; padding: 8px 0;">
                 <div style="max-width: 1200px; margin: 0 auto; padding: 0 24px;">
                     <span class="label-sm" style="color: var(--primary-60);">
@@ -21,7 +26,7 @@ pub fn LandingPage() -> impl IntoView {
                 </div>
             </div>
 
-            // Top nav
+            // 2. Top nav
             <nav class="anim-fade-in delay-1" style="display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: 0 auto; padding: 20px 24px;">
                 <div class="label-lg" style="font-weight: 600; font-size: 18px;">
                     "◆ ARC"
@@ -36,12 +41,19 @@ pub fn LandingPage() -> impl IntoView {
                 </div>
             </nav>
 
+            // 3. Hero
             {hero::Hero()}
+
+            // 4. Features (with icons)
             {features::Features()}
+
+            // 5. How it works (with icons)
             {how_it_works::HowItWorks()}
+
+            // 6. Code block
             {code_block::CodeBlock()}
 
-            // Stats strip
+            // 7. Stats strip
             <div style="border-top: 1px solid #1f1f1f; border-bottom: 1px solid #1f1f1f;">
                 <div style="max-width: 1200px; margin: 0 auto; padding: 52px 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;">
                     <div class="anim-fade-up delay-1">
@@ -63,19 +75,22 @@ pub fn LandingPage() -> impl IntoView {
                 </div>
             </div>
 
-            // CTA section
-            <div class="cta-section" style="background: var(--primary); transition: background 0.3s;">
-                <div style="max-width: 1200px; margin: 0 auto; padding: 104px 24px; text-align: center;">
-                    <h2 class="headline-display anim-fade-up" style="color: var(--tertiary); margin-bottom: 24px;">
-                        "Ready to deploy?"
-                    </h2>
-                    <button class="btn btn-sm anim-scale-in delay-2" style="background: var(--tertiary); color: var(--secondary);"
-                            on:click=move |_| navigate(Route::Overview)>
-                        "Get Started →"
-                    </button>
-                </div>
-            </div>
+            // 8. Comparison table
+            {comparison::Comparison()}
 
+            // 9. Testimonials
+            {testimonials::Testimonials()}
+
+            // 10. Pricing
+            {pricing::Pricing()}
+
+            // 11. FAQ
+            {faq::Faq()}
+
+            // 12. Final CTA
+            {cta_final::CtaFinal()}
+
+            // 13. Footer
             {footer::Footer()}
         </div>
     }

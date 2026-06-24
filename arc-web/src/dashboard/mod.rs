@@ -3,9 +3,11 @@ pub mod overview;
 pub mod projects;
 pub mod project_detail;
 pub mod analytics;
+pub mod settings;
 
 use leptos::prelude::*;
 use crate::app::{use_app_state, navigate, Route};
+use crate::icons;
 
 #[component]
 pub fn DashboardShell() -> impl IntoView {
@@ -17,18 +19,22 @@ pub fn DashboardShell() -> impl IntoView {
                 <div class="sidebar-logo">"◆ ARC"</div>
                 <div class="sidebar-link" class:active=move || state.route.get() == Route::Overview
                     on:click=move |_| state.route.set(Route::Overview)>
-                    <span>"▣ Overview"</span>
+                    {icons::IconHome()}
+                    <span>"Overview"</span>
                 </div>
                 <div class="sidebar-link" class:active=move || state.route.get() == Route::Projects
                     on:click=move |_| state.route.set(Route::Projects)>
-                    <span>"▤ Projects"</span>
+                    {icons::IconFolder()}
+                    <span>"Projects"</span>
                 </div>
                 <div class="sidebar-link" class:active=move || state.route.get() == Route::Analytics
                     on:click=move |_| state.route.set(Route::Analytics)>
-                    <span>"▥ Analytics"</span>
+                    {icons::IconChart()}
+                    <span>"Analytics"</span>
                 </div>
                 <div class="sidebar-link" on:click=move |_| navigate(Route::Landing)>
-                    <span>"↩ Back to site"</span>
+                    {icons::IconArrow()}
+                    <span>"Back to site"</span>
                 </div>
             </aside>
             <main class="dash-content">
@@ -41,6 +47,11 @@ pub fn DashboardShell() -> impl IntoView {
                         ).into_any()
                     }
                     Route::Analytics => analytics::AnalyticsPage().into_any(),
+                    Route::Settings(id) => {
+                        settings::SettingsPage(
+                            settings::SettingsPageProps { project_id: id }
+                        ).into_any()
+                    }
                     Route::Landing => view! { "Redirecting..." }.into_any(),
                 }}
             </main>

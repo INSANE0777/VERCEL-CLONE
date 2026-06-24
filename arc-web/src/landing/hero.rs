@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use crate::app::{navigate, Route};
+use crate::icons;
 
 #[component]
 pub fn Hero() -> impl IntoView {
@@ -18,7 +19,8 @@ pub fn Hero() -> impl IntoView {
                 </p>
                 <div class="anim-fade-up delay-4" style="display: flex; gap: 16px; flex-wrap: wrap;">
                     <button class="btn btn-primary" on:click=move |_| navigate(Route::Overview)>
-                        "Get Started →"
+                        <span style="display: flex; width: 18px; height: 18px;">{icons::IconArrow()}</span>
+                        "Get Started"
                     </button>
                     <button class="btn btn-secondary-dark" on:click=move |_| navigate(Route::Landing)>
                         "View Docs"

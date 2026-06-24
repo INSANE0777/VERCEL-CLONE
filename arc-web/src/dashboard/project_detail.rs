@@ -5,6 +5,7 @@ use leptos::task::spawn_local;
 use leptos::ev;
 use super::components::*;
 use crate::app::{Route, navigate};
+use crate::icons;
 
 #[component]
 pub fn ProjectDetailPage(project_id: String) -> impl IntoView {
@@ -107,6 +108,11 @@ pub fn ProjectDetailPage(project_id: String) -> impl IntoView {
                     <button class="btn btn-primary btn-sm" on:click=move |_| deploy_now()>
                         "Deploy Now"
                     </button>
+                    <button class="btn btn-secondary btn-sm"
+                        on:click=move |_| navigate(Route::Settings(pid_rc.as_ref().clone()))>
+                        <span style="display: flex; width: 16px; height: 16px;">{icons::IconSettings()}</span>
+                        "Settings"
+                    </button>
                     <button class="btn btn-danger btn-sm" on:click=move |_| {
                         if web_sys::window().unwrap()
                             .confirm_with_message("Delete this project and all deployments?")
@@ -114,6 +120,7 @@ pub fn ProjectDetailPage(project_id: String) -> impl IntoView {
                             delete_project();
                         }
                     }>
+                        <span style="display: flex; width: 16px; height: 16px;">{icons::IconTrash()}</span>
                         "Delete Project"
                     </button>
                 </div>
@@ -188,6 +195,7 @@ pub fn ProjectDetailPage(project_id: String) -> impl IntoView {
                                                 }}</td>
                                                 <td>
                                                     <button class="btn btn-secondary btn-sm" on:click=move |_| view_logs(did.clone())>
+                                                        <span style="display: flex; width: 16px; height: 16px;">{icons::IconTerminal()}</span>
                                                         "View Logs"
                                                     </button>
                                                 </td>

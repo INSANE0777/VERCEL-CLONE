@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use crate::icons;
 
 #[component]
 pub fn Features() -> impl IntoView {
@@ -17,12 +18,27 @@ pub fn Features() -> impl IntoView {
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
                     {features.into_iter().enumerate().map(|(i, (title, desc))| {
                         let delay = format!("delay-{}", i + 1);
+                        let icon = match i {
+                            0 => view! {
+                                <span style="display: flex; color: var(--primary); width: 32px; height: 32px;">
+                                    {icons::IconRocket()}
+                                </span>
+                            }.into_any(),
+                            1 => view! {
+                                <span style="display: flex; color: var(--primary); width: 32px; height: 32px;">
+                                    {icons::IconGitBranch()}
+                                </span>
+                            }.into_any(),
+                            _ => view! {
+                                <span style="display: flex; color: var(--primary); width: 32px; height: 32px;">
+                                    {icons::IconGlobe()}
+                                </span>
+                            }.into_any(),
+                        };
                         view! {
                             <div class={format!("card card-hover anim-fade-up {}", delay)} style="padding: 32px;">
-                                <div style="width: 32px; height: 32px; background: var(--primary); margin-bottom: 24px; transition: transform 0.3s ease;"
-                                     on:mouseenter=move |_: leptos::ev::MouseEvent| {
-                                         // CSS hover handles this via card-hover class
-                                     }>
+                                <div style="margin-bottom: 24px;">
+                                    {icon}
                                 </div>
                                 <h3 class="headline-sm" style="color: var(--on-surface); margin-bottom: 12px;">
                                     {title}

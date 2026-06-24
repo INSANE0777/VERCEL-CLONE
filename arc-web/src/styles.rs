@@ -364,4 +364,8 @@ a { color: inherit; text-decoration: none; }
   .headline-display { font-size: 32px; }
   .headline-lg { font-size: 28px; }
 }
+
+/* ── Icon sizing ── */
+.sidebar-link svg { width: 18px; height: 18px; flex-shrink: 0; }
+.badge svg { width: 12px; height: 12px; flex-shrink: 0; }
 "#;

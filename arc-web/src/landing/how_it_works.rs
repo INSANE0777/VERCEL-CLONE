@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use crate::icons;
 
 #[component]
 pub fn HowItWorks() -> impl IntoView {
@@ -18,10 +19,35 @@ pub fn HowItWorks() -> impl IntoView {
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;">
                     {steps.into_iter().enumerate().map(|(i, (num, title, desc))| {
                         let delay = format!("delay-{}", i + 1);
+                        let icon = match i {
+                            0 => view! {
+                                <span style="display: flex; color: var(--primary); width: 24px; height: 24px;">
+                                    {icons::IconGitBranch()}
+                                </span>
+                            }.into_any(),
+                            1 => view! {
+                                <span style="display: flex; color: var(--primary); width: 24px; height: 24px;">
+                                    {icons::IconCode()}
+                                </span>
+                            }.into_any(),
+                            2 => view! {
+                                <span style="display: flex; color: var(--primary); width: 24px; height: 24px;">
+                                    {icons::IconBox()}
+                                </span>
+                            }.into_any(),
+                            _ => view! {
+                                <span style="display: flex; color: var(--primary); width: 24px; height: 24px;">
+                                    {icons::IconGlobe()}
+                                </span>
+                            }.into_any(),
+                        };
                         view! {
                             <div class={format!("anim-fade-up {}", delay)}>
-                                <div class="label-lg" style="color: var(--primary); margin-bottom: 16px;">
-                                    {num}
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                                    <span class="label-lg" style="color: var(--primary);">
+                                        {num}
+                                    </span>
+                                    {icon}
                                 </div>
                                 <h3 class="headline-sm" style="color: var(--secondary); margin-bottom: 8px;">
                                     {title}

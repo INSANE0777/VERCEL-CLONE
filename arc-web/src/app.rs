@@ -12,6 +12,7 @@ pub enum Route {
     Projects,
     ProjectDetail(String),
     Analytics,
+    Settings(String),
 }
 
 #[derive(Clone)]

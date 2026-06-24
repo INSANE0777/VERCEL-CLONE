@@ -4,6 +4,7 @@ use leptos::task::spawn_local;
 use leptos::ev;
 use super::components::*;
 use crate::app::{Route, navigate};
+use crate::icons;
 
 #[component]
 pub fn ProjectsPage() -> impl IntoView {
@@ -71,7 +72,8 @@ pub fn ProjectsPage() -> impl IntoView {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
                 <h1 class="headline-md">"Projects"</h1>
                 <button class="btn btn-primary btn-sm" on:click=move |_| set_show_modal.set(true)>
-                    "+ New Project"
+                    <span style="display: flex; width: 16px; height: 16px;">{icons::IconPlus()}</span>
+                    "New Project"
                 </button>
             </div>
 
@@ -125,6 +127,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                                         delete_project(pid_del.clone(), pname_del.clone());
                                                     }
                                                 }>
+                                                <span style="display: flex; width: 16px; height: 16px;">{icons::IconTrash()}</span>
                                                 "Delete"
                                             </button>
                                         </div>

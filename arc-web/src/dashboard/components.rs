@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
+use crate::icons;
 
 // ── API Types ──────────────────────────────────────────────
 
@@ -150,8 +151,23 @@ pub fn Badge(status: String) -> impl IntoView {
         "building" => "badge badge-building",
         _ => "badge badge-queued",
     };
+    let icon = match status.as_str() {
+        "ready" => view! {
+            <span style="display: flex; width: 12px; height: 12px;">{icons::IconCheck()}</span>
+        }.into_any(),
+        "error" => view! {
+            <span style="display: flex; width: 12px; height: 12px;">{icons::IconX()}</span>
+        }.into_any(),
+        "building" => view! {
+            <span style="display: flex; width: 12px; height: 12px;">{icons::IconBolt()}</span>
+        }.into_any(),
+        _ => view! {}.into_any(),
+    };
     view! {
-        <span class=class>{status}</span>
+        <span class=class style="gap: 4px;">
+            {icon}
+            {status}
+        </span>
     }
 }
 
