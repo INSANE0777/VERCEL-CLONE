@@ -3,7 +3,8 @@
     admin localhost:2019
 }
 
-:80 {
+# Dashboard + API (only matches localhost, not deployment subdomains)
+localhost:80 {
     # Health check
     header /health Content-Type "application/json"
     respond /health 200 `{"status":"ok","service":"caddy"}`

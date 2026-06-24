@@ -36,7 +36,7 @@ impl EdgeRouter {
             format!(
                 r#"# Auto-generated for deployment {deployment_id}
 # Framework: {framework}
-{deployment_url} {{
+{deployment_url}:80 {{
     root * {artifacts_dir}
     
 {middleware}
@@ -72,7 +72,7 @@ impl EdgeRouter {
             format!(
                 r#"# Auto-generated for deployment {deployment_id}
 # Framework: {framework}
-{deployment_url} {{
+{deployment_url}:80 {{
     root * {artifacts_dir}
     
 {middleware}
