@@ -9,3 +9,4 @@ caddy/configs/*.caddy
 postgres_data/
 nats_data/
 minio_data/
+.pi/
