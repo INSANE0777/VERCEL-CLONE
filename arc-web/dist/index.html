@@ -7,17 +7,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-</head>
+    
+<script type="module">
+import init, * as bindings from '/arc-web-bcdccad9c4963628.js';
+const wasm = await init({ module_or_path: '/arc-web-bcdccad9c4963628_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+<link rel="modulepreload" href="/arc-web-bcdccad9c4963628.js" crossorigin="anonymous" integrity="sha384-NquDQpIPHLF34cIfGUwQftHvUogXLPNfRo4BGNnPoWlHRlO/GZS8rN+2owlzVYfo"><link rel="preload" href="/arc-web-bcdccad9c4963628_bg.wasm" crossorigin="anonymous" integrity="sha384-XhxZqi88b0XipVaeE3lq/eSkEao/P1FPf8jQAl53KzUI+7zfE9CmiZG/S32+sTEf" as="fetch" type="application/wasm"></head>
 <body>
     <div id="app"></div>
-    <script type="module">
-        import init, * as bindings from './arc-web.js';
-        init('./arc-web_bg.wasm').then(() => {
-            console.log('ARC WASM loaded');
-        }).catch(e => {
-            console.error('ARC WASM failed:', e);
-            document.getElementById('app').innerHTML = '<div style="color:#D94B4B;font-family:monospace;padding:40px">Failed to load ARC. Check console.</div>';
-        });
-    </script>
 </body>
 </html>

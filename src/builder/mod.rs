@@ -310,13 +310,23 @@ async fn execute_build(
     tracing::info!("Stored {} bytes of build artifacts", total_bytes);
 
     // ── Step 7: Generate Caddy config for serving ──
-    let deployment_url = if job.is_production {
-        format!("{}.localhost", job.repo_full_name.split('/').last().unwrap_or("app"))
-    } else {
-        format!("{}-{:.8}.localhost", 
-            job.repo_full_name.split('/').last().unwrap_or("app"),
-            job.deployment_id)
-    };
+    // Use the URL already assigned when the deployment was created
+    let deployment = db.get_deployment(
+        uuid::Uuid::parse_str(&job.deployment_id).unwrap_or_else(|_| uuid::Uuid::nil())
+    ).await.ok();
+    let deployment_url = deployment.as_ref()
+        .and_then(|d| d.url.as_ref())
+        .cloned()
+        .unwrap_or_else(|| {
+            // Fallback: construct from repo name
+            if job.is_production {
+                format!("{}.localhost", job.repo_full_name.split('/').last().unwrap_or("app"))
+            } else {
+                format!("{}-{:.8}.localhost",
+                    job.repo_full_name.split('/').last().unwrap_or("app"),
+                    uuid::Uuid::parse_str(&job.deployment_id).unwrap_or_else(|_| uuid::Uuid::nil()))
+            }
+        });
 
     // Fetch middleware rules for this project
     let mw_rules: Vec<crate::edge::middleware::MiddlewareRule> = match uuid::Uuid::parse_str(&job.project_id) {

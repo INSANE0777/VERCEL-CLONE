@@ -97,7 +97,9 @@ pub struct LogResponse {
 // ── API Client ─────────────────────────────────────────────
 
 pub fn api_base() -> String {
-    crate::app::use_app_state().api_base.clone()
+    // API is served by the Rust backend on port 3000 (or via Caddy on port 80)
+    // The ARC website runs on a different port, so we need an absolute URL
+    "http://localhost/api".to_string()
 }
 
 pub async fn api_get<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
