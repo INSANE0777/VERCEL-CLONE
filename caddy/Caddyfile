@@ -5,10 +5,8 @@
 
 :80 {
     # Health check
-    respond /health 200 {
-        body '{"status":"ok","service":"caddy"}'
-        content_type "application/json"
-    }
+    header /health Content-Type "application/json"
+    respond /health 200 `{"status":"ok","service":"caddy"}`
 
     # Proxy API requests
     handle /api/* {
@@ -20,17 +18,11 @@
         reverse_proxy api:3000
     }
 
-    # Proxy WebSocket status streams
-    handle /api/deployments/*/status/stream {
-        reverse_proxy api:3000
-    }
-
     # Include generated deployment configs
     import /app/caddy/configs/*.caddy
 
-    # Default fallback
+    # Default fallback — proxy to API (serves dashboard at /)
     handle {
-        respond '{"platform":"vercel-clone","status":"running"}' 200
-        content_type "application/json"
+        reverse_proxy api:3000
     }
 }
