@@ -9,9 +9,11 @@ pub struct Database {
 impl Database {
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
         let pool = PgPoolOptions::new()
-            .max_connections(20)
+            .max_connections(10)
             .min_connections(2)
             .acquire_timeout(std::time::Duration::from_secs(10))
+            .idle_timeout(Some(std::time::Duration::from_secs(600)))
+            .max_lifetime(Some(std::time::Duration::from_secs(1800)))
             .connect(database_url)
             .await?;
 

@@ -336,14 +336,43 @@ async function deleteProjectById(id, name) {
   loadProjects();
 }
 
-// ── View Logs ──
+// ── View Logs (with live WebSocket streaming) ──
+let logWebSocket = null;
+
 async function viewLogs(deploymentId) {
   const data = await api('/deployments/' + deploymentId + '/logs');
   const logs = data.logs || 'No logs available';
   const w = window.open('', '_blank', 'width=800,height=600');
   w.document.write(`<title>Build Logs — ${deploymentId.slice(0,8)}</title>
-    <style>body{background:#171717;color:#e0e0e0;font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:16px;white-space:pre-wrap;word-break:break-all}</style>
-    <pre>${logs.replace(/</g,'&lt;')}</pre>`);
+    <style>
+      body{background:#171717;color:#e0e0e0;font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:16px;white-space:pre-wrap;word-break:break-all}
+      .live{color:#501cbe;font-weight:bold}
+    </style>
+    <div class="live" id="live-indicator">Live streaming...</div>
+    <pre id="log-content">${logs.replace(/</g,'&lt;')}</pre>`);
+  
+  // Connect WebSocket for live log streaming
+  if (logWebSocket) logWebSocket.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  logWebSocket = new WebSocket(proto + '://' + location.host + '/api/deployments/' + deploymentId + '/status/stream');
+  logWebSocket.onmessage = function(e) {
+    try {
+      const update = JSON.parse(e.data);
+      if (update.message && update.message !== 'current status' && update.message !== 'Build started') {
+        const pre = w.document.getElementById('log-content');
+        pre.textContent += update.message;
+        w.scrollTo(0, w.document.body.scrollHeight);
+      }
+      if (update.status === 'ready' || update.status === 'error') {
+        w.document.getElementById('live-indicator').textContent = 'Build ' + update.status;
+        logWebSocket.close();
+      }
+    } catch(err) {}
+  };
+  logWebSocket.onclose = function() {
+    if (w.document.getElementById('live-indicator'))
+      w.document.getElementById('live-indicator').textContent = 'Stream ended';
+  };
 }
 
 // ── Analytics ──

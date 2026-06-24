@@ -167,7 +167,7 @@ impl FirecrackerRunner {
     /// Create a bootable ext4 rootfs from a Docker image.
     #[cfg(unix)]
     async fn create_rootfs_from_docker(&self, image: &str) -> anyhow::Result<()> {
-        let work_dir = self.base_rootfs_path.parent().unwrap().join("rootfs-work");
+        let work_dir = self.base_rootfs_path.parent().ok_or_else(|| anyhow::anyhow!("no parent dir"))?.join("rootfs-work");
         tokio::fs::create_dir_all(&work_dir).await?;
 
         // Export Docker image to tarball
@@ -185,7 +185,7 @@ impl FirecrackerRunner {
         
         let tar_path = work_dir.join("rootfs.tar");
         let export_tar = Command::new("docker")
-            .args(["export", "-o", tar_path.to_str().unwrap(), &container_id])
+            .args(["export", "-o", tar_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?, &container_id])
             .output()
             .await?;
         
@@ -212,7 +212,7 @@ impl FirecrackerRunner {
         // Format as ext4
         let mkfs = Command::new("mkfs.ext4")
             .arg("-F")
-            .arg(self.base_rootfs_path.to_str().unwrap())
+            .arg(self.base_rootfs_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?)
             .output()
             .await?;
         
@@ -225,7 +225,7 @@ impl FirecrackerRunner {
         tokio::fs::create_dir_all(&mount_dir).await?;
         
         let mount = Command::new("mount")
-            .args(["-o", "loop", self.base_rootfs_path.to_str().unwrap(), mount_dir.to_str().unwrap()])
+            .args(["-o", "loop", self.base_rootfs_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?, mount_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
             .output()
             .await?;
         
@@ -235,12 +235,12 @@ impl FirecrackerRunner {
 
         // Extract tarball
         let extract = Command::new("tar")
-            .args(["-xf", tar_path.to_str().unwrap(), "-C", mount_dir.to_str().unwrap()])
+            .args(["-xf", tar_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?, "-C", mount_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
             .output()
             .await?;
         
         if !extract.status.success() {
-            let _ = Command::new("umount").arg(mount_dir.to_str().unwrap()).output().await;
+            let _ = Command::new("umount").arg(mount_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?).output().await;
             anyhow::bail!("Failed to extract rootfs: {}", String::from_utf8_lossy(&extract.stderr));
         }
 
@@ -249,7 +249,7 @@ impl FirecrackerRunner {
 
         // Unmount
         let umount = Command::new("umount")
-            .arg(mount_dir.to_str().unwrap())
+            .arg(mount_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?)
             .output()
             .await?;
         
@@ -295,7 +295,7 @@ while true; do sleep 3600; done
         tokio::fs::write(&init_path, init_script).await?;
         
         let chmod = Command::new("chmod")
-            .args(["+x", init_path.to_str().unwrap()])
+            .args(["+x", init_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
             .output()
             .await?;
         
@@ -344,7 +344,7 @@ while true; do sleep 3600; done
         let keygen = Command::new("ssh-keygen")
             .args([
                 "-t", "ed25519",
-                "-f", self.ssh_key_path.to_str().unwrap(),
+                "-f", self.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                 "-N", "",
                 "-C", "vercel-clone-vm"
             ])
@@ -360,11 +360,11 @@ while true; do sleep 3600; done
         if self.base_rootfs_path.exists() && pub_key_path.exists() {
             let pub_key = tokio::fs::read_to_string(&pub_key_path).await?;
             
-            let work_dir = self.base_rootfs_path.parent().unwrap().join("ssh-setup");
+            let work_dir = self.base_rootfs_path.parent().ok_or_else(|| anyhow::anyhow!("no parent dir"))?.join("ssh-setup");
             tokio::fs::create_dir_all(&work_dir).await?;
             
             let mount = Command::new("mount")
-                .args(["-o", "loop", self.base_rootfs_path.to_str().unwrap(), work_dir.to_str().unwrap()])
+                .args(["-o", "loop", self.base_rootfs_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?, work_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
                 .output()
                 .await?;
             
@@ -379,7 +379,7 @@ while true; do sleep 3600; done
                 file.write_all(b"\n").await?;
                 drop(file);
                 
-                let _ = Command::new("umount").arg(work_dir.to_str().unwrap()).output().await;
+                let _ = Command::new("umount").arg(work_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?).output().await;
             }
         }
 
@@ -411,8 +411,8 @@ while true; do sleep 3600; done
             
             let copy = Command::new("cp")
                 .args(["--sparse=always",
-                       self.base_rootfs_path.to_str().unwrap(),
-                       vm_rootfs.to_str().unwrap()])
+                       self.base_rootfs_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
+                       vm_rootfs.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
                 .output()
                 .await?;
             
@@ -430,7 +430,7 @@ while true; do sleep 3600; done
             // Start Firecracker process
             let child = Command::new("firecracker")
                 .args([
-                    "--api-sock", socket_path.to_str().unwrap(),
+                    "--api-sock", socket_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                     "--id", &vm_id,
                 ])
                 .stdin(Stdio::null())
@@ -487,8 +487,8 @@ while true; do sleep 3600; done
             
             let copy = Command::new("cp")
                 .args(["--sparse=always",
-                       self.base_rootfs_path.to_str().unwrap(),
-                       vm_rootfs.to_str().unwrap()])
+                       self.base_rootfs_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
+                       vm_rootfs.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
                 .output()
                 .await?;
             
@@ -502,7 +502,7 @@ while true; do sleep 3600; done
             // Start Firecracker process
             let child = Command::new("firecracker")
                 .args([
-                    "--api-sock", socket_path.to_str().unwrap(),
+                    "--api-sock", socket_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                     "--id", &vm_id,
                 ])
                 .stdin(Stdio::null())
@@ -598,7 +598,7 @@ while true; do sleep 3600; done
         let host_ip = format!("{}.1", self.vm_ip_base);
 
         let boot_source = serde_json::json!({
-            "kernel_image_path": self.kernel_path.to_str().unwrap(),
+            "kernel_image_path": self.kernel_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
             "boot_args": format!(
                 "console=ttyS0 reboot=k panic=1 pci=off \
                  ip={}::{}:{}::eth0:off \
@@ -610,7 +610,7 @@ while true; do sleep 3600; done
 
         let rootfs_drive = serde_json::json!({
             "drive_id": "rootfs",
-            "path_on_host": rootfs_path.to_str().unwrap(),
+            "path_on_host": rootfs_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
             "is_root_device": true,
             "is_read_only": false,
         });
@@ -635,7 +635,7 @@ while true; do sleep 3600; done
     #[cfg(unix)]
     async fn create_project_disk(&self, project_dir: &Path, disk_path: &Path) -> anyhow::Result<()> {
         let du = Command::new("du")
-            .args(["-sb", project_dir.to_str().unwrap()])
+            .args(["-sb", project_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
             .output()
             .await?;
         
@@ -661,7 +661,7 @@ while true; do sleep 3600; done
 
         let mkfs = Command::new("mkfs.ext4")
             .arg("-F")
-            .arg(disk_path.to_str().unwrap())
+            .arg(disk_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?)
             .output()
             .await?;
         
@@ -669,11 +669,11 @@ while true; do sleep 3600; done
             anyhow::bail!("Failed to format project disk");
         }
 
-        let mount_dir = disk_path.parent().unwrap().join(format!("mnt-{}", Uuid::new_v4()));
+        let mount_dir = disk_path.parent().ok_or_else(|| anyhow::anyhow!("no parent dir"))?.join(format!("mnt-{}", Uuid::new_v4()));
         tokio::fs::create_dir_all(&mount_dir).await?;
         
         let mount = Command::new("mount")
-            .args(["-o", "loop", disk_path.to_str().unwrap(), mount_dir.to_str().unwrap()])
+            .args(["-o", "loop", disk_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?, mount_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?])
             .output()
             .await?;
         
@@ -689,12 +689,12 @@ while true; do sleep 3600; done
             .await?;
         
         if !cp.status.success() {
-            let _ = Command::new("umount").arg(mount_dir.to_str().unwrap()).output().await;
+            let _ = Command::new("umount").arg(mount_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?).output().await;
             anyhow::bail!("Failed to copy project to disk");
         }
 
         let umount = Command::new("umount")
-            .arg(mount_dir.to_str().unwrap())
+            .arg(mount_dir.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?)
             .output()
             .await?;
         
@@ -774,7 +774,7 @@ while true; do sleep 3600; done
         self.api_put(socket_path, "/machine-config", &machine_config).await?;
 
         let boot_source = serde_json::json!({
-            "kernel_image_path": self.kernel_path.to_str().unwrap(),
+            "kernel_image_path": self.kernel_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
             "boot_args": format!(
                 "console=ttyS0 reboot=k panic=1 pci=off \
                  ip={}::{}:{}::eth0:off \
@@ -788,7 +788,7 @@ while true; do sleep 3600; done
 
         let rootfs_drive = serde_json::json!({
             "drive_id": "rootfs",
-            "path_on_host": rootfs_path.to_str().unwrap(),
+            "path_on_host": rootfs_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
             "is_root_device": true,
             "is_read_only": false,
         });
@@ -796,7 +796,7 @@ while true; do sleep 3600; done
 
         let project_drive = serde_json::json!({
             "drive_id": "project",
-            "path_on_host": project_disk.to_str().unwrap(),
+            "path_on_host": project_disk.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
             "is_root_device": false,
             "is_read_only": false,
         });
@@ -874,7 +874,7 @@ while true; do sleep 3600; done
         for i in 0..max_attempts {
             let ssh_test = Command::new("ssh")
                 .args([
-                    "-i", self.ssh_key_path.to_str().unwrap(),
+                    "-i", self.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
                     "-o", "ConnectTimeout=1",
@@ -916,7 +916,7 @@ while true; do sleep 3600; done
         {
             let mount_cmd = Command::new("ssh")
                 .args([
-                    "-i", self.ssh_key_path.to_str().unwrap(),
+                    "-i", self.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
                     &format!("root@{}", vm.vm_ip),
@@ -950,7 +950,7 @@ while true; do sleep 3600; done
 
             let mut child = Command::new("ssh")
                 .args([
-                    "-i", self.ssh_key_path.to_str().unwrap(),
+                    "-i", self.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
                     &format!("root@{}", vm.vm_ip),
@@ -960,8 +960,8 @@ while true; do sleep 3600; done
                 .stderr(Stdio::piped())
                 .spawn()?;
 
-            let stdout = child.stdout.take().unwrap();
-            let stderr = child.stderr.take().unwrap();
+            let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("stdout not piped"))?;
+            let stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("stderr not piped"))?;
             
             let mut stdout_reader = BufReader::new(stdout).lines();
             let mut stderr_reader = BufReader::new(stderr).lines();
@@ -1029,7 +1029,7 @@ while true; do sleep 3600; done
             
             let scp = Command::new("scp")
                 .args([
-                    "-i", self.ssh_key_path.to_str().unwrap(),
+                    "-i", self.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
                     "-r",

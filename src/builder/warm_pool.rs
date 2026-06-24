@@ -158,7 +158,7 @@ impl WarmPool {
         let mut child = Command::new("ssh")
             .args([
                 "-i",
-                self.runner.ssh_key_path.to_str().unwrap(),
+                self.runner.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                 "-o",
                 "StrictHostKeyChecking=no",
                 "-o",
@@ -171,8 +171,8 @@ impl WarmPool {
             .spawn()?;
 
         // Stream logs
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
+        let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("stdout not piped"))?;
+        let stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("stderr not piped"))?;
         let mut stdout_reader = tokio::io::AsyncBufReadExt::lines(tokio::io::BufReader::new(stdout));
         let mut stderr_reader = tokio::io::AsyncBufReadExt::lines(tokio::io::BufReader::new(stderr));
 
@@ -220,7 +220,7 @@ impl WarmPool {
         let scp = Command::new("scp")
             .args([
                 "-i",
-                self.runner.ssh_key_path.to_str().unwrap(),
+                self.runner.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                 "-o",
                 "StrictHostKeyChecking=no",
                 "-o",
@@ -238,7 +238,7 @@ impl WarmPool {
                 let alt_scp = Command::new("scp")
                     .args([
                         "-i",
-                        self.runner.ssh_key_path.to_str().unwrap(),
+                        self.runner.ssh_key_path.to_str().ok_or_else(|| anyhow::anyhow!("non-UTF8 path"))?,
                         "-o",
                         "StrictHostKeyChecking=no",
                         "-o",

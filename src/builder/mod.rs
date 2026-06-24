@@ -95,7 +95,7 @@ pub async fn run_build_worker(
             let _ = queue.publish_status(&job.deployment_id, "building", "Build started").await;
 
             // Execute build
-            let result = execute_build(&db, &artifacts, &router, &config, &job, warm_pool.clone()).await;
+            let result = execute_build(&db, &artifacts, &router, &config, &job, warm_pool.clone(), &queue).await;
 
             match result {
                 Ok((logs, framework)) => {
@@ -170,6 +170,7 @@ async fn execute_build(
     config: &AppConfig,
     job: &BuildJob,
     warm_pool: Option<Arc<warm_pool::WarmPool>>,
+    queue: &BuildQueue,
 ) -> anyhow::Result<(String, String)> {
     let _docker = Docker::connect_with_local_defaults()?;
 
@@ -250,7 +251,7 @@ async fn execute_build(
     };
 
     // ── Step 4: Run build (Firecracker microVM preferred, Docker fallback) ──
-    let logs = match run_build_firecracker_or_docker(config, &build_path, &fw, &job.env_vars, job, warm_pool).await {
+    let logs = match run_build_firecracker_or_docker(config, &build_path, &fw, &job.env_vars, job, warm_pool, queue).await {
         Ok(logs) => logs,
         Err(e) => {
             tracing::error!("Build execution failed: {}", e);
@@ -360,6 +361,7 @@ async fn run_build_firecracker_or_docker(
     env_vars: &[(String, String)],
     job: &crate::models::BuildJob,
     warm_pool: Option<Arc<warm_pool::WarmPool>>,
+    queue: &BuildQueue,
 ) -> anyhow::Result<String> {
     // ── Priority 1: Warm pool (instant VM, ~100ms startup) ──
     if let Some(pool) = warm_pool {
@@ -418,14 +420,14 @@ async fn run_build_firecracker_or_docker(
 
         if let Err(e) = runner.prepare(&config.docker_image).await {
             tracing::warn!("Firecracker prep failed ({}), falling back to Docker", e);
-            return run_build_in_docker(config, build_path, fw, env_vars, job).await;
+            return run_build_in_docker(config, build_path, fw, env_vars, job, queue).await;
         }
 
         let vm = match runner.spawn_vm(build_path).await {
             Ok(vm) => vm,
             Err(e) => {
                 tracing::warn!("Failed to spawn Firecracker VM ({}), falling back to Docker", e);
-                return run_build_in_docker(config, build_path, fw, env_vars, job).await;
+                return run_build_in_docker(config, build_path, fw, env_vars, job, queue).await;
             }
         };
 
@@ -447,14 +449,14 @@ async fn run_build_firecracker_or_docker(
             }
             Err(e) => {
                 tracing::warn!("Firecracker build failed ({}), falling back to Docker", e);
-                return run_build_in_docker(config, build_path, fw, env_vars, job).await;
+                return run_build_in_docker(config, build_path, fw, env_vars, job, queue).await;
             }
         }
     }
 
     // ── Priority 3: Docker containers (software isolation) ──
     tracing::info!("Using Docker containers (software isolation only)");
-    run_build_in_docker(config, build_path, fw, env_vars, job).await
+    run_build_in_docker(config, build_path, fw, env_vars, job, queue).await
 }
 
 /// Run the build command inside a Docker container.
@@ -467,6 +469,7 @@ async fn run_build_in_docker(
     fw: &framework::Framework,
     env_vars: &[(String, String)],
     job: &BuildJob,
+    queue: &BuildQueue,
 ) -> anyhow::Result<String> {
     let docker = Docker::connect_with_local_defaults()?;
 
@@ -555,10 +558,13 @@ async fn run_build_in_docker(
     );
 
     let timeout = std::time::Duration::from_secs(config.build_timeout_secs);
+    let deployment_id = job.deployment_id.clone();
     let log_collect = async {
         while let Some(Ok(log_output)) = log_stream.next().await {
             let msg = log_output.to_string();
             all_logs.push_str(&msg);
+            // Publish log line in real-time for WebSocket streaming
+            let _ = queue.publish_status(&deployment_id, "building", &msg).await;
         }
         all_logs.clone()
     };

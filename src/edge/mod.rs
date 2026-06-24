@@ -178,22 +178,70 @@ impl EdgeRouter {
         Ok(())
     }
 
-    /// Signal Caddy to reload configuration (re-parses Caddyfile + imports)
+    /// Reload Caddy config via admin API (POST /load with adapted Caddyfile).
+    /// Reads the Caddyfile from the mounted volume, adapts it via Caddy's
+    /// /adapt endpoint, then loads the JSON config. Faster than container restart.
     pub async fn reload(&self) -> anyhow::Result<()> {
-        // The simplest reliable way to reload Caddy with new import files
-        // is to restart the container. Caddy's admin API adapt endpoint
-        // requires the Caddyfile content, but the API container doesn't have it.
-        // A container restart re-parses everything including new .caddy imports.
+        let client = reqwest::Client::new();
+
+        // Read the Caddyfile from the shared volume mount
+        let caddyfile = match tokio::fs::read_to_string("/app/caddy/Caddyfile").await {
+            Ok(content) => content,
+            Err(_) => tokio::fs::read_to_string("./caddy/Caddyfile").await.unwrap_or_default(),
+        };
+
+        // Adapt Caddyfile to JSON via Caddy admin API
+        let adapt_resp = client
+            .post("http://caddy:2019/adapt")
+            .header("Content-Type", "text/caddyfile")
+            .body(caddyfile)
+            .send()
+            .await;
+
+        match adapt_resp {
+            Ok(resp) if resp.status().is_success() => {
+                let config_json = resp.text().await.unwrap_or_default();
+                // Load the adapted JSON config
+                let load_resp = client
+                    .post("http://caddy:2019/load")
+                    .header("Content-Type", "application/json")
+                    .body(config_json)
+                    .send()
+                    .await;
+                match load_resp {
+                    Ok(r) if r.status().is_success() => {
+                        tracing::info!("Caddy config reloaded via admin API");
+                    }
+                    Ok(r) => {
+                        tracing::warn!("Caddy load returned {}{}, falling back to restart", r.status(), r.text().await.unwrap_or_default());
+                        self.reload_via_restart().await?;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Caddy load failed: {}, falling back to restart", e);
+                        self.reload_via_restart().await?;
+                    }
+                }
+            }
+            _ => {
+                // Adapt failed — likely new .caddy files aren't in the Caddyfile yet
+                // Fall back to container restart which re-evaluates the import glob
+                tracing::debug!("Caddy adapt failed, falling back to restart");
+                self.reload_via_restart().await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Fallback: restart Caddy container to pick up new import files
+    async fn reload_via_restart(&self) -> anyhow::Result<()> {
         let docker = bollard::Docker::connect_with_local_defaults()?;
-        
-        // Restart the caddy container
         use bollard::container::RestartContainerOptions;
-        docker.restart_container("vercel-clone-caddy-1", Some(RestartContainerOptions { t: 2 })).await?;
-        tracing::info!("Caddy container restarted to pick up new deployment configs");
-        
-        // Give Caddy a moment to come back up
+        docker
+            .restart_container("vercel-clone-caddy-1", Some(RestartContainerOptions { t: 2 }))
+            .await?;
+        tracing::info!("Caddy container restarted (fallback)");
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        
         Ok(())
     }
 }

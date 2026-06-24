@@ -117,6 +117,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./artifacts:/artifacts
       - ./caddy/configs:/app/caddy/configs
+      - ./caddy/Caddyfile:/app/caddy/Caddyfile:ro
     depends_on:
       postgres:
         condition: service_healthy
