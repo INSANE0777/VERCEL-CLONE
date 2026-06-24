@@ -948,7 +948,7 @@ while true; do sleep 3600; done
 
             tracing::info!("Running build in microVM {}: {}", vm.id, full_cmd);
 
-            let child = Command::new("ssh")
+            let mut child = Command::new("ssh")
                 .args([
                     "-i", self.ssh_key_path.to_str().unwrap(),
                     "-o", "StrictHostKeyChecking=no",
@@ -960,8 +960,8 @@ while true; do sleep 3600; done
                 .stderr(Stdio::piped())
                 .spawn()?;
 
-            let stdout = child.stdout.unwrap();
-            let stderr = child.stderr.unwrap();
+            let stdout = child.stdout.take().unwrap();
+            let stderr = child.stderr.take().unwrap();
             
             let mut stdout_reader = BufReader::new(stdout).lines();
             let mut stderr_reader = BufReader::new(stderr).lines();

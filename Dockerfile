@@ -1,5 +1,5 @@
 # ── Build stage ────────────────────────────────────────
-FROM rust:1.82-slim AS builder
+FROM rust:latest AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ COPY Cargo.toml Cargo.lock* ./
 RUN touch src/main.rs && cargo build --release
 
 # ── Runtime stage ──────────────────────────────────────
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \

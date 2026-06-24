@@ -21,9 +21,8 @@ impl Database {
     }
 
     async fn run_migrations(&self) -> anyhow::Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS projects (
+        let statements = [
+            r#"CREATE TABLE IF NOT EXISTS projects (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 name TEXT NOT NULL,
                 github_repo_full_name TEXT NOT NULL UNIQUE,
@@ -31,9 +30,8 @@ impl Database {
                 production_branch TEXT NOT NULL DEFAULT 'main',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-
-            CREATE TABLE IF NOT EXISTS deployments (
+            )"#,
+            r#"CREATE TABLE IF NOT EXISTS deployments (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 sha TEXT NOT NULL,
@@ -47,9 +45,8 @@ impl Database {
                 github_pr_number INTEGER,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-
-            CREATE TABLE IF NOT EXISTS env_vars (
+            )"#,
+            r#"CREATE TABLE IF NOT EXISTS env_vars (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 key TEXT NOT NULL,
@@ -57,9 +54,8 @@ impl Database {
                 environment TEXT NOT NULL DEFAULT 'production',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 UNIQUE(project_id, key, environment)
-            );
-
-            CREATE TABLE IF NOT EXISTS build_caches (
+            )"#,
+            r#"CREATE TABLE IF NOT EXISTS build_caches (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 cache_key TEXT NOT NULL,
@@ -67,24 +63,21 @@ impl Database {
                 size_bytes BIGINT NOT NULL DEFAULT 0,
                 last_used TIMESTAMPTZ NOT NULL DEFAULT now(),
                 UNIQUE(project_id, cache_key)
-            );
-
-            CREATE TABLE IF NOT EXISTS domains (
+            )"#,
+            r#"CREATE TABLE IF NOT EXISTS domains (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 domain TEXT NOT NULL UNIQUE,
                 verified BOOLEAN NOT NULL DEFAULT false,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_deployments_project ON deployments(project_id);
-            CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
-            CREATE INDEX IF NOT EXISTS idx_deployments_branch ON deployments(branch);
-            CREATE INDEX IF NOT EXISTS idx_env_vars_project ON env_vars(project_id);
-            CREATE INDEX IF NOT EXISTS idx_build_caches_project ON build_caches(project_id);
-            CREATE INDEX IF NOT EXISTS idx_domains_project ON domains(project_id);
-
-            CREATE TABLE IF NOT EXISTS middleware_rules (
+            )"#,
+            "CREATE INDEX IF NOT EXISTS idx_deployments_project ON deployments(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)",
+            "CREATE INDEX IF NOT EXISTS idx_deployments_branch ON deployments(branch)",
+            "CREATE INDEX IF NOT EXISTS idx_env_vars_project ON env_vars(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_build_caches_project ON build_caches(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_domains_project ON domains(project_id)",
+            r#"CREATE TABLE IF NOT EXISTS middleware_rules (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 rule_type TEXT NOT NULL,
@@ -93,10 +86,9 @@ impl Database {
                 status_code INTEGER,
                 header_name TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-            CREATE INDEX IF NOT EXISTS idx_middleware_project ON middleware_rules(project_id);
-
-            CREATE TABLE IF NOT EXISTS analytics_events (
+            )"#,
+            "CREATE INDEX IF NOT EXISTS idx_middleware_project ON middleware_rules(project_id)",
+            r#"CREATE TABLE IF NOT EXISTS analytics_events (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
                 deployment_id UUID REFERENCES deployments(id) ON DELETE CASCADE,
@@ -105,14 +97,15 @@ impl Database {
                 duration_secs INTEGER,
                 is_production BOOLEAN,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-            CREATE INDEX IF NOT EXISTS idx_analytics_project ON analytics_events(project_id);
-            CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type);
-            CREATE INDEX IF NOT EXISTS idx_analytics_created ON analytics_events(created_at);
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
+            )"#,
+            "CREATE INDEX IF NOT EXISTS idx_analytics_project ON analytics_events(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_events(event_type)",
+            "CREATE INDEX IF NOT EXISTS idx_analytics_created ON analytics_events(created_at)",
+        ];
+
+        for stmt in &statements {
+            sqlx::query(stmt).execute(&self.pool).await?;
+        }
 
         tracing::info!("PostgreSQL migrations complete");
         Ok(())
