@@ -67,9 +67,15 @@ pub async fn get_project(State(state): State<Arc<AppState>>, Path(id): Path<Stri
 }
 
 pub async fn create_project(State(state): State<Arc<AppState>>, Json(req): Json<CreateProjectRequest>) -> Result<(StatusCode, Json<ProjectResponse>), (StatusCode, String)> {
-    let github_url = format!("https://github.com/{}", req.github_repo_full_name);
+    let repo_full_name = req.github_repo_full_name
+        .trim_start_matches("https://github.com/")
+        .trim_start_matches("http://github.com/")
+        .trim_start_matches("github.com/")
+        .trim_end_matches('/')
+        .trim();
+    let github_url = format!("https://github.com/{}", repo_full_name);
     let production_branch = req.production_branch.unwrap_or_else(|| "main".into());
-    let p = state.db.create_project(&req.name, &req.github_repo_full_name, &github_url, &production_branch)
+    let p = state.db.create_project(&req.name, &repo_full_name, &github_url, &production_branch)
         .await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok((StatusCode::CREATED, Json(ProjectResponse {
         id: p.id.to_string(), name: p.name,
