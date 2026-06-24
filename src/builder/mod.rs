@@ -336,7 +336,7 @@ async fn execute_build(
     router.add_deployment(
         &job.deployment_id,
         &deployment_url,
-        &artifacts.local_artifacts_dir(&job.deployment_id),
+        &format!("{}/{}", artifacts.local_artifacts_dir(&job.deployment_id), fw.output_dir),
         &fw.name,
         &mw_rules,
     ).await?;
