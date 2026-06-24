@@ -37,7 +37,7 @@ impl EdgeRouter {
                 r#"# Auto-generated for deployment {deployment_id}
 # Framework: {framework}
 {deployment_url} {{
-    root * {artifacts_dir}/{deployment_id}
+    root * {artifacts_dir}
     
 {middleware}
     # SPA fallback
@@ -73,7 +73,7 @@ impl EdgeRouter {
                 r#"# Auto-generated for deployment {deployment_id}
 # Framework: {framework}
 {deployment_url} {{
-    root * {artifacts_dir}/{deployment_id}
+    root * {artifacts_dir}
     
 {middleware}
     # SPA fallback

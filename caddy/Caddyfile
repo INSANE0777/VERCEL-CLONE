@@ -17,9 +17,10 @@
     handle /webhooks/* {
         reverse_proxy api:3000
     }
+}
 
-    # Include generated deployment configs
-    import /app/caddy/configs/*.caddy
+# Include generated deployment configs (must be at top level)
+import /app/caddy/configs/*.caddy
 
     # Default fallback — proxy to API (serves dashboard at /)
     handle {
