@@ -481,11 +481,16 @@ async fn run_build_in_container(
         // consume stream
     }
 
-    // Mount the build directory
+    // Mount the shared builds volume and target the specific build subdir
+    let build_subdir = std::path::Path::new(build_dir)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(".");
+
     let mount = Mount {
-        target: Some("/app".to_string()),
-        source: Some(build_dir.to_string()),
-        typ: Some(MountTypeEnum::BIND),
+        target: Some("/builds".to_string()),
+        source: Some("builds_data".to_string()),
+        typ: Some(MountTypeEnum::VOLUME),
         read_only: Some(false),
         ..Default::default()
     };
@@ -503,8 +508,8 @@ async fn run_build_in_container(
         .collect();
 
     let build_script = format!(
-        "cd /app && {} && {}",
-        fw.install_command, fw.build_command
+        "cd /builds/{} && {} && {}",
+        build_subdir, fw.install_command, fw.build_command
     );
 
     let container_config = Config {
