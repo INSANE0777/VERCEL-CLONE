@@ -8,6 +8,8 @@ mod github;
 mod models;
 mod queue;
 mod storage;
+#[cfg(test)]
+mod tests;
 
 use builder::warm_pool::WarmPool;
 
