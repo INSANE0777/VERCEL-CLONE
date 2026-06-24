@@ -75,6 +75,7 @@ services:
       - "2019:2019"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/configs:/app/caddy/configs:ro
       - caddy_data:/data
       - caddy_config:/config
       - ./artifacts:/artifacts:ro
