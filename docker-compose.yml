@@ -114,7 +114,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./artifacts:/artifacts
       - ./caddy/configs:/app/caddy/configs
-      - builds_data:/tmp/vercel-clone-builds
+      - /tmp/vercel-clone-builds:/tmp/vercel-clone-builds
     depends_on:
       postgres:
         condition: service_healthy
@@ -130,4 +130,4 @@ volumes:
   minio_data:
   caddy_data:
   caddy_config:
-  builds_data:
+

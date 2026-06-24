@@ -93,11 +93,6 @@ impl EdgeRouter {
     header X-Deployment-Id "{deployment_id}"
     header X-Framework "{framework}"
     
-    # TLS (automatic via Let's Encrypt)
-    tls {{
-        protocols tls1.2 tls1.3
-    }}
-    
     # Security headers
     header X-Content-Type-Options "nosniff"
     header X-Frame-Options "DENY"
@@ -183,21 +178,22 @@ impl EdgeRouter {
         Ok(())
     }
 
-    /// Signal Caddy to reload configuration
+    /// Signal Caddy to reload configuration (re-parses Caddyfile + imports)
     pub async fn reload(&self) -> anyhow::Result<()> {
-        // Caddy auto-reloads when config files change
-        // For explicit reload, we can use the Caddy API
-        let client = reqwest::Client::new();
-        let res = client
-            .post("http://localhost:2019/config/adapt")
-            .send()
-            .await;
-
-        match res {
-            Ok(_) => tracing::info!("Caddy config reloaded"),
-            Err(_) => tracing::debug!("Caddy reload skipped (Caddy API not available)"),
-        }
-
+        // The simplest reliable way to reload Caddy with new import files
+        // is to restart the container. Caddy's admin API adapt endpoint
+        // requires the Caddyfile content, but the API container doesn't have it.
+        // A container restart re-parses everything including new .caddy imports.
+        let docker = bollard::Docker::connect_with_local_defaults()?;
+        
+        // Restart the caddy container
+        use bollard::container::RestartContainerOptions;
+        docker.restart_container("vercel-clone-caddy-1", Some(RestartContainerOptions { t: 2 })).await?;
+        tracing::info!("Caddy container restarted to pick up new deployment configs");
+        
+        // Give Caddy a moment to come back up
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        
         Ok(())
     }
 }

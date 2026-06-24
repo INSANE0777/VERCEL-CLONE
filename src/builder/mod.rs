@@ -341,6 +341,11 @@ async fn execute_build(
         &mw_rules,
     ).await?;
 
+    // Reload Caddy to pick up the new deployment config
+    if let Err(e) = router.reload().await {
+        tracing::warn!("Failed to reload Caddy: {}", e);
+    }
+
     // Cleanup
     let _ = tokio::fs::remove_dir_all(&build_path).await;
 
@@ -481,16 +486,11 @@ async fn run_build_in_container(
         // consume stream
     }
 
-    // Mount the shared builds volume and target the specific build subdir
-    let build_subdir = std::path::Path::new(build_dir)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(".");
-
+    // Mount the build directory via host bind mount
     let mount = Mount {
         target: Some("/builds".to_string()),
-        source: Some("builds_data".to_string()),
-        typ: Some(MountTypeEnum::VOLUME),
+        source: Some("/tmp/vercel-clone-builds".to_string()),
+        typ: Some(MountTypeEnum::BIND),
         read_only: Some(false),
         ..Default::default()
     };
@@ -506,6 +506,11 @@ async fn run_build_in_container(
     let env: Vec<String> = env_vars.iter()
         .map(|(k, v)| format!("{}={}", k, v))
         .collect();
+
+    let build_subdir = std::path::Path::new(build_dir)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(".");
 
     let build_script = format!(
         "cd /builds/{} && {} && {}",
