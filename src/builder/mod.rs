@@ -326,7 +326,7 @@ async fn execute_build(
     };
 
     // Detect and start serverless function runtime if API routes exist
-    let has_functions = !functions::FunctionRuntime::detect_api_routes(&artifact_path, &fw.name).is_empty();
+    let has_functions = !functions::detect_api_routes(&artifact_path, &fw.name).is_empty();
     if has_functions {
         tracing::info!("Detected API routes for {} — function runtime will be available", job.deployment_id);
         // Function runtime is started on-demand by the API when the deployment is first accessed
@@ -594,7 +594,6 @@ async fn run_build_in_docker(
             let artifact_dest = build_path.join(&fw.output_dir);
             tokio::fs::create_dir_all(&artifact_dest).await?;
 
-            use tokio::io::AsyncReadExt;
             let mut tar_bytes = Vec::new();
             let mut stream = download;
             while let Some(Ok(chunk)) = stream.next().await {

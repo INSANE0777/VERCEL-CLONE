@@ -1,5 +1,5 @@
 # ── Build stage ────────────────────────────────────────
-FROM rust:latest AS builder
+FROM rust:1.96 AS builder
 
 WORKDIR /app
 
@@ -27,7 +27,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     git \
     curl \
-    docker.io \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 

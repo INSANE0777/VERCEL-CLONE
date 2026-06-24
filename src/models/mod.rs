@@ -162,26 +162,4 @@ pub struct BuildJob {
     pub attempt: u32,
 }
 
-// ── Deployment status enum ────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum BuildStatus {
-    Queued,
-    Building,
-    Ready,
-    Error,
-    Cancelled,
-}
-
-impl std::fmt::Display for BuildStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BuildStatus::Queued => write!(f, "queued"),
-            BuildStatus::Building => write!(f, "building"),
-            BuildStatus::Ready => write!(f, "ready"),
-            BuildStatus::Error => write!(f, "error"),
-            BuildStatus::Cancelled => write!(f, "cancelled"),
-        }
-    }
-}
+// Deployment status is stored as TEXT in PostgreSQL (queued/building/ready/error/cancelled).

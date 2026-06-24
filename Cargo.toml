@@ -65,7 +65,6 @@ walkdir = "2"
 futures-util = "0.3"
 
 # DashMap for concurrent state
-dashmap = "6"
 
 # Metrics
 metrics = "0.24"

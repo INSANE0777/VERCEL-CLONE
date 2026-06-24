@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # ── PostgreSQL ───────────────────────────────────────────
   postgres:
@@ -17,6 +15,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    mem_limit: 512m
 
   # ── NATS JetStream ───────────────────────────────────────
   nats:
@@ -35,6 +34,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    mem_limit: 256m
 
   # ── MinIO (S3-compatible) ────────────────────────────────
   minio:
@@ -53,6 +53,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    mem_limit: 512m
 
   # Create MinIO bucket on startup
   minio-init:
@@ -81,6 +82,7 @@ services:
       - ./artifacts:/artifacts:ro
     depends_on:
       - api
+    mem_limit: 128m
 
   # ── The Rust API + Build Workers ──────────────────────────
   api:
@@ -103,19 +105,18 @@ services:
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-dev-secret}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - BASE_DOMAIN=localhost
-      - DOCKER_BUILD_IMAGE=node:20-slim
+      - DOCKER_BUILD_IMAGE=node:20
       - BUILD_MEMORY_LIMIT=2147483648
       - BUILD_TIMEOUT_SECS=600
       - CADDY_CONFIG_DIR=/app/caddy/configs
       - ARTIFACTS_DIR=/artifacts
       - MAX_CONCURRENT_BUILDS=4
       - WARM_POOL_SIZE=2
-      - RUST_LOG=vercel_clone=debug,tower_http=debug
+      - RUST_LOG=vercel_clone=info,tower_http=info
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./artifacts:/artifacts
       - ./caddy/configs:/app/caddy/configs
-      - /tmp/vercel-clone-builds:/tmp/vercel-clone-builds
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +125,7 @@ services:
       minio:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 1g
 
 volumes:
   postgres_data:
@@ -131,4 +133,3 @@ volumes:
   minio_data:
   caddy_data:
   caddy_config:
-

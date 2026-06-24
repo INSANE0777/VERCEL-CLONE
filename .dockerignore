@@ -1,0 +1,10 @@
+target/
+.git/
+node_modules/
+artifacts/
+caddy/configs/*.caddy
+*.md
+.env
+.env.*
+.pi/
+graphify-out/
