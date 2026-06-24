@@ -23,6 +23,7 @@ async-nats = "0.39"
 
 # Docker API (for build isolation, fallback from Firecracker)
 bollard = "0.18"
+tar = "0.4"
 
 # S3-compatible object storage (replaces local filesystem)
 rust-s3 = "0.35"

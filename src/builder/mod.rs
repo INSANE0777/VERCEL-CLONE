@@ -11,10 +11,10 @@ use crate::models::BuildJob;
 use crate::queue::BuildQueue;
 use crate::storage::ArtifactStore;
 use bollard::container::{
-    Config, CreateContainerOptions, LogsOptions, RemoveContainerOptions,
-    WaitContainerOptions,
+    Config, CreateContainerOptions,
 };
-use bollard::models::{HostConfig, Mount, MountTypeEnum};
+use bollard::models::HostConfig;
+use bollard::container::{LogsOptions, RemoveContainerOptions, WaitContainerOptions};
 use bollard::Docker;
 use futures_util::stream::StreamExt;
 use std::sync::Arc;
@@ -418,14 +418,14 @@ async fn run_build_firecracker_or_docker(
 
         if let Err(e) = runner.prepare(&config.docker_image).await {
             tracing::warn!("Firecracker prep failed ({}), falling back to Docker", e);
-            return run_build_in_docker(config, build_path, fw, env_vars).await;
+            return run_build_in_docker(config, build_path, fw, env_vars, job).await;
         }
 
         let vm = match runner.spawn_vm(build_path).await {
             Ok(vm) => vm,
             Err(e) => {
                 tracing::warn!("Failed to spawn Firecracker VM ({}), falling back to Docker", e);
-                return run_build_in_docker(config, build_path, fw, env_vars).await;
+                return run_build_in_docker(config, build_path, fw, env_vars, job).await;
             }
         };
 
@@ -447,82 +447,80 @@ async fn run_build_firecracker_or_docker(
             }
             Err(e) => {
                 tracing::warn!("Firecracker build failed ({}), falling back to Docker", e);
-                return run_build_in_docker(config, build_path, fw, env_vars).await;
+                return run_build_in_docker(config, build_path, fw, env_vars, job).await;
             }
         }
     }
 
     // ── Priority 3: Docker containers (software isolation) ──
     tracing::info!("Using Docker containers (software isolation only)");
-    run_build_in_docker(config, build_path, fw, env_vars).await
+    run_build_in_docker(config, build_path, fw, env_vars, job).await
 }
 
-/// Run the build command inside a Docker container
+/// Run the build command inside a Docker container.
+/// Clone + install + build all happen inside the container, then output is
+/// copied out via docker cp. No shared volume needed — avoids Windows bind
+/// mount symlink issues entirely.
 async fn run_build_in_docker(
     config: &AppConfig,
     build_path: &std::path::Path,
     fw: &framework::Framework,
     env_vars: &[(String, String)],
+    job: &BuildJob,
 ) -> anyhow::Result<String> {
     let docker = Docker::connect_with_local_defaults()?;
-    run_build_in_container(&docker, config, build_path.to_str().unwrap(), fw, env_vars).await
-}
 
-/// Run the build command inside a Docker container (legacy signature)
-async fn run_build_in_container(
-    docker: &Docker,
-    config: &AppConfig,
-    build_dir: &str,
-    fw: &framework::Framework,
-    env_vars: &[(String, String)],
-) -> anyhow::Result<String> {
+    // Build the clone URL with token if available
+    let clone_url = if !config.github_token.is_empty() && job.repo_url.starts_with("https://github.com/") {
+        format!("https://x-access-token:{}@github.com/{}",
+            config.github_token,
+            &job.repo_url["https://github.com/".len()..])
+    } else {
+        job.repo_url.clone()
+    };
+
+    // Use node:20 (full) which has git installed
+    let build_image = "node:20".to_string();
+
     // Pull image if needed
     let pull_options = bollard::image::CreateImageOptions {
-        from_image: config.docker_image.clone(),
+        from_image: build_image.clone(),
         ..Default::default()
     };
     let mut pull_stream = docker.create_image(Some(pull_options), None, None);
-    while let Some(Ok(_)) = pull_stream.next().await {
-        // consume stream
-    }
+    while let Some(Ok(_)) = pull_stream.next().await {}
 
-    // Mount the builds volume (named volume — symlinks work properly,
-    // unlike Windows bind mounts where npm .bin/ symlinks lose exec bit)
-    let mount = Mount {
-        target: Some("/builds".to_string()),
-        source: Some("vercel-builds".to_string()),
-        typ: Some(MountTypeEnum::VOLUME),
-        read_only: Some(false),
-        ..Default::default()
-    };
-
+    // No volume mount — clone and build entirely inside the container
     let host_config = HostConfig {
-        mounts: Some(vec![mount]),
         memory: Some(config.build_memory_limit),
         network_mode: Some("host".to_string()),
         ..Default::default()
     };
 
-    // Build script with env vars
-    let env: Vec<String> = env_vars.iter()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect();
-
-    let build_subdir = std::path::Path::new(build_dir)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(".");
+    // Build script: clone, checkout SHA if needed, install, build
+    let checkout_cmd = if !job.sha.is_empty() && job.sha != "HEAD" {
+        format!(" && git fetch --depth 1 origin {} && git checkout {}", job.sha, job.sha)
+    } else {
+        String::new()
+    };
 
     let build_script = format!(
-        "cd /builds/{} && {} && {}",
-        build_subdir, fw.install_command, fw.build_command
+        "git clone --depth 1 '{}' /app && cd /app{} && {} && {}",
+        clone_url, checkout_cmd, fw.install_command, fw.build_command
     );
 
+    // Pass env vars
+    let mut env: Vec<String> = env_vars.iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect();
+    env.push("GIT_TERMINAL_PROMPT=0".to_string());
+
     let container_config = Config {
-        image: Some(config.docker_image.clone()),
+        image: Some(build_image),
         cmd: Some(vec!["sh".to_string(), "-c".to_string(), build_script]),
         env: Some(env),
         host_config: Some(host_config),
+        working_dir: Some("/app".to_string()),
         ..Default::default()
     };
 
@@ -570,42 +568,46 @@ async fn run_build_in_container(
     // Check timeout
     if logs_result.is_err() {
         tracing::error!("Build container timed out after {}s — killing", config.build_timeout_secs);
-        let _ = docker
-            .kill_container(container_id, None::<bollard::container::KillContainerOptions<String>>)
-            .await;
-
-        let _ = docker
-            .remove_container(
-                container_id,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await;
-
+        let _ = docker.kill_container(container_id, None::<bollard::container::KillContainerOptions<String>>).await;
+        let _ = docker.remove_container(container_id, Some(RemoveContainerOptions { force: true, ..Default::default() })).await;
         anyhow::bail!("Build timed out after {} seconds", config.build_timeout_secs);
     }
 
     // Wait for completion
     let mut wait_stream = docker.wait_container(
         container_id,
-        Some(WaitContainerOptions {
-            condition: "not-running".to_string(),
-        }),
+        Some(WaitContainerOptions { condition: "not-running".to_string() }),
     );
 
     if let Some(Ok(result)) = wait_stream.next().await {
-        // Cleanup container
-        let _ = docker
-            .remove_container(
+        // Copy build output from container before removing
+        if result.status_code == 0 {
+            let output_dir = &fw.output_dir;
+            let download = docker.download_from_container(
                 container_id,
-                Some(RemoveContainerOptions {
-                    force: true,
+                Some(bollard::container::DownloadFromContainerOptions {
+                    path: format!("/app/{}", output_dir),
                     ..Default::default()
                 }),
-            )
-            .await;
+            );
+
+            let artifact_dest = build_path.join(&fw.output_dir);
+            tokio::fs::create_dir_all(&artifact_dest).await?;
+
+            use tokio::io::AsyncReadExt;
+            let mut tar_bytes = Vec::new();
+            let mut stream = download;
+            while let Some(Ok(chunk)) = stream.next().await {
+                tar_bytes.extend_from_slice(&chunk);
+            }
+
+            let cursor = std::io::Cursor::new(tar_bytes);
+            let mut archive = tar::Archive::new(cursor);
+            archive.unpack(&artifact_dest)?;
+            tracing::info!("Extracted build output to {}", artifact_dest.display());
+        }
+
+        let _ = docker.remove_container(container_id, Some(RemoveContainerOptions { force: true, ..Default::default() })).await;
 
         if result.status_code != 0 {
             anyhow::bail!(
@@ -617,15 +619,7 @@ async fn run_build_in_container(
     }
 
     // Cleanup container (in case wait didn't trigger)
-    let _ = docker
-        .remove_container(
-            container_id,
-            Some(RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            }),
-        )
-        .await;
+    let _ = docker.remove_container(container_id, Some(RemoveContainerOptions { force: true, ..Default::default() })).await;
 
     Ok(all_logs)
 }
